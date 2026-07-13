@@ -134,6 +134,14 @@ func merge(prior, fresh manifest.Service) manifest.Service {
 	if prior.Berth != 0 {
 		out.Berth = prior.Berth
 	}
+	// The originally declared port must survive rescans. Once `wharf berth` has
+	// written the assigned berth into a service's config, re-detecting would
+	// report the *new* port as the declared one and lose the only record of what
+	// the project used to ask for — which is what existing gateway routes and
+	// hard-coded URLs elsewhere still refer to.
+	if prior.Declared != 0 {
+		out.Declared = prior.Declared
+	}
 	// Explicit human choices that detection has no business overriding.
 	out.Disabled = prior.Disabled
 	out.DependsOn = prior.DependsOn

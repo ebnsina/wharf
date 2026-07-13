@@ -36,6 +36,7 @@ func (d GoDetector) Detect(dir string) (manifest.Service, bool) {
 	if len(svc.Config) > 0 {
 		res := probe(dir, svc.Config[0])
 		svc.Berth = res.Port
+		svc.Declared = res.Port
 		svc.Config[0].PortKey = res.PortKey
 		svc.Config[0].PortTemplate = res.PortTemplate
 		svc.Needs = res.Needs

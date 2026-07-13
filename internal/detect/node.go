@@ -75,6 +75,7 @@ func (d NodeDetector) Detect(dir string) (manifest.Service, bool) {
 
 	svc.Config = findConfigSources(dir)
 	svc.Berth = d.port(dir, pkg)
+	svc.Declared = svc.Berth
 	if svc.Berth > 0 {
 		svc.Health = &manifest.Health{Type: "http", Path: "/", TimeoutSeconds: 60}
 	}

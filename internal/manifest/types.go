@@ -80,6 +80,17 @@ type Service struct {
 	// dependents and gateway routes can hard-code it.
 	Berth int `yaml:"berth,omitempty"`
 
+	// Declared is the port the project's own config asked for when wharf first
+	// saw it, before any berth was assigned.
+	//
+	// It is kept because the outside world still refers to services by their
+	// original port: an existing nginx config routes /v1/cdn/ to :8085 because
+	// that is what the CDN service used to declare. Matching such a route
+	// against the *current* occupant of :8085 hands it to whichever service won
+	// that port in the collision — silently routing traffic to the wrong
+	// service.
+	Declared int `yaml:"declared_berth,omitempty"`
+
 	// Processes are the things to run. A service is a *group* — an API plus a
 	// worker plus a poller are one service, started and killed together.
 	Processes []Process `yaml:"processes,omitempty"`
@@ -195,9 +206,19 @@ type Lifecycle struct {
 type Route struct {
 	// Prefix is the path prefix on the gateway host, e.g. /v1/cdn/.
 	Prefix string `yaml:"prefix"`
-	// StripPrefix rewrites /v1/cdn/foo to /v1/foo when true, matching the
-	// existing nginx `proxy_pass http://localhost:8085/v1/` behaviour.
-	StripPrefix string `yaml:"strip_prefix,omitempty"`
+
+	// Strip removes Prefix from the path before proxying upstream.
+	Strip bool `yaml:"strip,omitempty"`
+
+	// UpstreamPrefix is prepended after stripping, so /v1/cdn/x becomes /v1/x.
+	// Empty sends the stripped path unchanged.
+	//
+	// Strip and UpstreamPrefix are separate because nginx conflates them: the
+	// trailing slash in `proxy_pass http://host:8082/` is what strips the
+	// prefix, while `proxy_pass http://host:8082` keeps the whole URI. One field
+	// cannot express both without getting a route quietly wrong.
+	UpstreamPrefix string `yaml:"upstream_prefix,omitempty"`
+
 	// Default marks the catch-all backend for "/".
 	Default bool `yaml:"default,omitempty"`
 }
