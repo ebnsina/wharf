@@ -58,6 +58,7 @@ func Execute() error {
 		newUpCmd(),
 		newDBCmd(),
 		newBerthCmd(),
+		newLinkCmd(),
 		newBootstrapCmd(),
 		newGatewayCmd(),
 		newInfraCmd(),

@@ -110,6 +110,19 @@ type Service struct {
 	// Lifecycle holds the setup commands that are otherwise only in your head.
 	Lifecycle Lifecycle `yaml:"lifecycle,omitempty"`
 
+	// Links names the service each config variable points at, so wharf can keep
+	// the URL correct when that service moves.
+	//
+	// Detection can usually work this out — a variable called
+	// VITE_LIVESTREAM_API_URL plainly means the livestream service — but a
+	// generic VITE_API_URL pointing at a port four services shipped with is
+	// genuinely ambiguous, and only you know which was meant. Say it once here
+	// and wharf never gets it wrong again.
+	//
+	//   links:
+	//     VITE_API_URL: billing-api
+	Links map[string]string `yaml:"links,omitempty"`
+
 	// Route, if set, registers this service with the gateway.
 	Route *Route `yaml:"route,omitempty"`
 

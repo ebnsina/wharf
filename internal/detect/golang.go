@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,19 @@ func (d GoDetector) processes(dir string, mk makefile) []manifest.Process {
 		Primary: true,
 	})
 
+	// A Go service can carry its own SPA under web/. It is the only user
+	// interface the service has — the Go server answers the API and returns 404
+	// at the root — so without this the service "runs" and yet there is nothing
+	// to open.
+	if hasWebApp(dir) {
+		pm := packageManager(filepath.Join(dir, "web"))
+		procs = append(procs, manifest.Process{
+			Name: "web",
+			Cmd:  pm + " run dev",
+			Dir:  "web",
+		})
+	}
+
 	// Secondary processes, discovered from their dedicated Air configs. These
 	// default to not autostarting: you rarely need the poller to iterate on an
 	// HTTP handler, and starting it anyway just burns CPU and clutters logs.
@@ -105,6 +119,23 @@ func (d GoDetector) processes(dir string, mk makefile) []manifest.Process {
 		}
 	}
 	return procs
+}
+
+// hasWebApp reports whether the project ships a front end under web/ that can
+// be served in dev.
+func hasWebApp(dir string) bool {
+	raw := readFile(dir, filepath.Join("web", "package.json"))
+	if raw == "" {
+		return false
+	}
+	var pkg struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	if err := json.Unmarshal([]byte(raw), &pkg); err != nil {
+		return false
+	}
+	_, ok := pkg.Scripts["dev"]
+	return ok
 }
 
 // primaryCmd picks how to run the main server, preferring hot-reload since that
