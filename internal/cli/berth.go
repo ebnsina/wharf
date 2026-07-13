@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func newBerthCmd() *cobra.Command {
-	var dryRun bool
+	var dryRun, force bool
 
 	cmd := &cobra.Command{
 		Use:   "berth [service...]",
@@ -19,18 +20,20 @@ func newBerthCmd() *cobra.Command {
 		Long: "Services read a hard-coded config path and accept no port override, so the\n" +
 			"berth has to live in their own config. wharf edits only the port key, keeps\n" +
 			"comments and formatting intact, and backs the file up first.\n\n" +
-			"These config files are gitignored local files, so the change stays out of\n" +
-			"version control — and your ports stop colliding even outside wharf.",
+			"A config that is committed to git is skipped: a berth is a choice about this\n" +
+			"machine, and writing it into a shared file would put it in everyone else's\n" +
+			"checkout. Pass --force to write it anyway.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBerth(args, dryRun)
+			return runBerth(args, dryRun, force)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show the edits without making them")
+	cmd.Flags().BoolVar(&force, "force", false, "write even into a git-tracked config")
 	return cmd
 }
 
-func runBerth(names []string, dryRun bool) error {
+func runBerth(names []string, dryRun, force bool) error {
 	st, err := store()
 	if err != nil {
 		return err
@@ -48,6 +51,7 @@ func runBerth(names []string, dryRun bool) error {
 
 	var changes []*config.Change
 	var skipped []string
+	var tracked []*config.ErrTracked
 
 	for _, svc := range services {
 		if svc.Kind != manifest.KindService || svc.Berth == 0 {
@@ -64,15 +68,27 @@ func runBerth(names []string, dryRun bool) error {
 		path := filepath.Join(svc.Path, src.Path)
 		change, err := config.SetPort(
 			bk, svc.Name, path, config.Format(src.Format),
-			src.PortKey, src.PortTemplate, svc.Berth, dryRun,
+			src.PortKey, src.PortTemplate, svc.Berth, dryRun, force,
 		)
 		if err != nil {
+			var te *config.ErrTracked
+			if errors.As(err, &te) {
+				tracked = append(tracked, te)
+				continue
+			}
 			ui.Fail("%s — %v", svc.Name, err)
 			continue
 		}
 		if change != nil {
 			changes = append(changes, change)
 		}
+	}
+
+	// Report tracked configs separately: they are not errors, they are a
+	// deliberate refusal, and the user needs to know a berth was not applied.
+	for _, te := range tracked {
+		ui.Warn("%-30s skipped — %s is committed to git", te.Service, filepath.Base(te.File))
+		ui.Note("    its port stays as-is; gitignore the config, or re-run with --force")
 	}
 
 	for _, c := range changes {

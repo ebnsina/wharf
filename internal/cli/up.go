@@ -247,7 +247,7 @@ func ensureBerths(st *manifest.Store, services []manifest.Service) error {
 		path := filepath.Join(svc.Path, src.Path)
 		change, err := config.SetPort(
 			bk, svc.Name, path, config.Format(src.Format),
-			src.PortKey, src.PortTemplate, svc.Berth, false,
+			src.PortKey, src.PortTemplate, svc.Berth, false, false,
 		)
 		if err != nil {
 			return fmt.Errorf("%s: %w", svc.Name, err)

@@ -78,7 +78,7 @@ func RenderPort(template string, port int) string {
 //
 // path is absolute; key is a dotted path (YAML/JSON) or a variable name
 // (dotenv); template is the value shape, e.g. ":{port}".
-func SetPort(bk Backupper, service, path string, format Format, key, template string, port int, dryRun bool) (*Change, error) {
+func SetPort(bk Backupper, service, path string, format Format, key, template string, port int, dryRun, force bool) (*Change, error) {
 	if key == "" {
 		return nil, fmt.Errorf("%s: no port key known for %s", service, path)
 	}
@@ -97,6 +97,17 @@ func SetPort(bk Backupper, service, path string, format Format, key, template st
 	}
 	if !changed {
 		return nil, nil
+	}
+
+	// A config committed to git is not this machine's to rewrite: the berth is a
+	// local choice, and putting it in a shared file leaks it into everyone
+	// else's checkout.
+	//
+	// Checked only once a change is actually required. Warning about a tracked
+	// file whose port already matches its berth would report a problem that does
+	// not exist.
+	if !force && IsTracked(path) {
+		return nil, &ErrTracked{Service: service, File: path}
 	}
 
 	change := &Change{Service: service, File: path, Key: key, From: before, To: want}
