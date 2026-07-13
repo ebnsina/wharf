@@ -14,24 +14,28 @@ import (
 
 func newBootstrapCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "bootstrap <service>",
+		Use:   "bootstrap [service]",
 		Short: "Take a freshly cloned service from nothing to running",
 		Long: "Creates its config from the committed template, installs dependencies, brings\n" +
 			"up its infrastructure, migrates and seeds. These are the steps that normally\n" +
 			"live in a README nobody has updated.",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBootstrap(args[0])
+			return runBootstrap(args)
 		},
 	}
 }
 
-func runBootstrap(name string) error {
+func runBootstrap(args []string) error {
 	st, err := store()
 	if err != nil {
 		return err
 	}
-	svc, err := st.LoadService(name)
+	services, err := st.LoadServices()
+	if err != nil {
+		return err
+	}
+	svc, err := requireService(services, args)
 	if err != nil {
 		return err
 	}

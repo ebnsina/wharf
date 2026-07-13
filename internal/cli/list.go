@@ -38,6 +38,8 @@ func runList(all bool) error {
 		return fmt.Errorf("no services known; run `wharf scan <dir>` first")
 	}
 
+	here, inProject := currentService(services)
+
 	for _, svc := range services {
 		if !all && (svc.Kind != manifest.KindService || svc.Disabled) {
 			continue
@@ -64,8 +66,19 @@ func runList(all bool) error {
 			detail = "library"
 		}
 
-		fmt.Printf("%s %-30s %-7s %-7s %s\n",
-			status, svc.Name, port, svc.Stack, ui.Dim.Render(detail))
+		// The project you are standing in is marked, so a long list still
+		// answers "where am I" at a glance.
+		marker := " "
+		name := svc.Name
+		if inProject && svc.Name == here.Name {
+			marker = ui.Blue.Render("▸")
+			name = ui.Bold.Render(svc.Name) + strings.Repeat(" ", max(30-len(svc.Name), 0))
+		} else {
+			name = fmt.Sprintf("%-30s", svc.Name)
+		}
+
+		fmt.Printf("%s%s %s %-7s %-7s %s\n",
+			marker, status, name, port, svc.Stack, ui.Dim.Render(detail))
 	}
 	return nil
 }

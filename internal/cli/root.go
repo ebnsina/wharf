@@ -26,11 +26,32 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,
+		Args:          cobra.NoArgs,
+		// Bare `wharf` inside a project shows that project. Standing in one is
+		// an unambiguous statement about which service you mean, and answering
+		// with a wall of twenty-five others ignores it.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := store()
+			if err != nil {
+				return cmd.Help()
+			}
+			services, err := st.LoadServices()
+			if err != nil || len(services) == 0 {
+				return cmd.Help()
+			}
+			svc, ok := currentService(services)
+			if !ok {
+				return cmd.Help()
+			}
+			return showService(services, svc)
+		},
 	}
 
 	root.PersistentFlags().StringVar(&home, "home", "", "wharf state directory (default ~/.wharf)")
 
 	root.AddCommand(
+		newShowCmd(),
+		newLogsCmd(),
 		newScanCmd(),
 		newListCmd(),
 		newTUICmd(),

@@ -114,6 +114,17 @@ type (
 	errMsg struct{ err error }
 )
 
+// SelectByName puts the cursor on a service, so opening the dashboard from
+// inside a project starts on that project rather than alphabetically first.
+func (m *Model) SelectByName(name string) {
+	for i, e := range m.view {
+		if e.svc.Name == name {
+			m.cursor = i
+			return
+		}
+	}
+}
+
 // New builds the dashboard over the given services.
 func New(st *manifest.Store, services []manifest.Service) *Model {
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))

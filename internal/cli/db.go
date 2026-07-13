@@ -15,29 +15,34 @@ func newDBCmd() *cobra.Command {
 	var kind string
 
 	cmd := &cobra.Command{
-		Use:   "db <service>",
+		Use:   "db [service]",
 		Short: "Open a database shell for a service",
 		Long: "Reads the connection string out of the service's own config and opens the\n" +
 			"right client with it — psql, redis-cli, clickhouse-client. You never look up\n" +
 			"a host, port, user or database name again.",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDB(args[0], kind)
+			return runDB(args, kind)
 		},
 	}
 	cmd.Flags().StringVar(&kind, "type", "", "which datastore, when a service has several (postgres, redis, clickhouse)")
 	return cmd
 }
 
-func runDB(name, kind string) error {
+func runDB(args []string, kind string) error {
 	st, err := store()
 	if err != nil {
 		return err
 	}
-	svc, err := st.LoadService(name)
+	services, err := st.LoadServices()
 	if err != nil {
 		return err
 	}
+	svc, err := requireService(services, args)
+	if err != nil {
+		return err
+	}
+	name := svc.Name
 	if len(svc.Needs) == 0 {
 		return fmt.Errorf("%s has no datastore that wharf could find", name)
 	}

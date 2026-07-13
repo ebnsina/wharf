@@ -37,6 +37,12 @@ func runTUI() error {
 
 	model := tui.New(st, services)
 
+	// Open on the project the user is standing in. Starting alphabetically first
+	// makes them scroll to where they already were.
+	if svc, ok := currentService(services); ok {
+		model.SelectByName(svc.Name)
+	}
+
 	// AltScreen keeps the dashboard from scrolling the user's scrollback away
 	// and restores the terminal on exit. Cell-motion mouse mode gives click and
 	// wheel events, which is the difference between a dashboard you point at and

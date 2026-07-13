@@ -33,10 +33,7 @@ func newUpCmd() *cobra.Command {
 			"Ctrl-C stops everything it started, as a process group.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && !all {
-				return fmt.Errorf("name a service, or pass --all to start everything")
-			}
-			return runUp(args, withInfra, noBerth)
+			return runUp(args, withInfra, noBerth, all)
 		},
 	}
 	cmd.Flags().BoolVar(&withInfra, "infra", false, "provision missing datastores and create their databases")
@@ -45,7 +42,7 @@ func newUpCmd() *cobra.Command {
 	return cmd
 }
 
-func runUp(names []string, withInfra, noBerth bool) error {
+func runUp(names []string, withInfra, noBerth, everything bool) error {
 	st, err := store()
 	if err != nil {
 		return err
@@ -53,6 +50,19 @@ func runUp(names []string, withInfra, noBerth bool) error {
 	all, err := st.LoadServices()
 	if err != nil {
 		return err
+	}
+
+	// No names inside a project means that project. Standing in one says which
+	// service you mean; making you type its name again ignores it.
+	if len(names) == 0 && !everything {
+		names, err = resolveNames(all, names)
+		if err != nil {
+			return err
+		}
+		if len(names) == 0 {
+			return fmt.Errorf("name a service, run this from inside one, or pass --all")
+		}
+		ui.Note("in %s", names[0])
 	}
 
 	services, err := orchestrator.Resolve(all, names)

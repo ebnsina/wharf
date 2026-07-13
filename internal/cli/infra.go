@@ -132,8 +132,15 @@ func runInfraUp(names []string, mode string, yes bool) error {
 	}
 
 	// Narrow to the named services, so `wharf infra up billing` does not start
-	// every datastore in the workspace.
+	// every datastore in the workspace. Standing inside a project narrows it the
+	// same way, without having to name it.
 	services := all
+	if len(names) == 0 {
+		if svc, ok := currentService(all); ok {
+			names = []string{svc.Name}
+			ui.Note("in %s", svc.Name)
+		}
+	}
 	if len(names) > 0 {
 		services = selectServices(all, names)
 		if len(services) == 0 {
