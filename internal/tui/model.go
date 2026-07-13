@@ -44,6 +44,20 @@ type entry struct {
 	logs   []string
 }
 
+// runningProcesses counts the live processes in this service's group.
+func (e *entry) runningProcesses() int {
+	if e.group == nil {
+		return 0
+	}
+	n := 0
+	for _, p := range e.group.Processes() {
+		if p.State() == process.StateRunning {
+			n++
+		}
+	}
+	return n
+}
+
 // Model is the dashboard state.
 type Model struct {
 	store   *manifest.Store
@@ -56,6 +70,8 @@ type Model struct {
 	width    int
 	height   int
 	err      error
+	// logFocus routes scroll keys to the log pane instead of the service list.
+	logFocus bool
 	// following pins the log pane to the newest line, the behaviour you want
 	// until you scroll up to read something.
 	following bool
@@ -131,8 +147,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clamp: a terminal narrower than the service list — or one that reports
 		// no size at all, as a bare pty does — yields negative dimensions, and
 		// viewport panics on those rather than degrading.
-		logWidth := max(msg.Width-listWidth-3, minPaneWidth)
-		logHeight := max(msg.Height-4, minPaneHeight)
+		//
+		// Rows consumed around the log body: header(1) + footer(1) +
+		// pane border(2) + pane title(1).
+		logWidth := max(msg.Width-listWidth-6, minPaneWidth)
+		logHeight := max(msg.Height-6, minPaneHeight)
 
 		if !m.ready {
 			m.viewport = viewport.New(logWidth, logHeight)
@@ -185,17 +204,40 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// exactly the orphan problem the supervisor exists to prevent.
 		return m, tea.Sequence(m.stopAll(), tea.Quit)
 
+	case "tab":
+		m.logFocus = !m.logFocus
+
 	case "up", "k":
+		if m.logFocus {
+			m.following = false
+			m.viewport.LineUp(1)
+			return m, nil
+		}
 		if m.cursor > 0 {
 			m.cursor--
 			m.refreshLog()
 		}
 
 	case "down", "j":
+		if m.logFocus {
+			m.viewport.LineDown(1)
+			if m.viewport.AtBottom() {
+				m.following = true
+			}
+			return m, nil
+		}
 		if m.cursor < len(m.entries)-1 {
 			m.cursor++
 			m.refreshLog()
 		}
+
+	case "home":
+		m.cursor = 0
+		m.refreshLog()
+
+	case "end":
+		m.cursor = len(m.entries) - 1
+		m.refreshLog()
 
 	case "s", "enter":
 		return m, m.start(m.current())
@@ -233,7 +275,10 @@ func (m *Model) applyEvent(ev process.Event) {
 	switch ev.Kind {
 	case process.EventLog:
 		line := ev.Line
-		if ev.Process != "" && len(e.svc.Processes) > 1 {
+		// Only label the source when more than one process is actually running.
+		// Tagging every line "[api]" for a service whose worker is not even
+		// started is pure noise, repeated on every row.
+		if ev.Process != "" && e.runningProcesses() > 1 {
 			line = "[" + ev.Process + "] " + line
 		}
 		e.logs = append(e.logs, line)
@@ -391,7 +436,13 @@ func (m *Model) refreshLog() {
 		m.viewport.SetContent("")
 		return
 	}
-	m.viewport.SetContent(strings.Join(e.logs, "\n"))
+
+	lines := make([]string, len(e.logs))
+	for i, l := range e.logs {
+		lines[i] = colorize(l)
+	}
+	m.viewport.SetContent(strings.Join(lines, "\n"))
+
 	if m.following {
 		m.viewport.GotoBottom()
 	}
