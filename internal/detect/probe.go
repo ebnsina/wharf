@@ -26,49 +26,69 @@ type probeResult struct {
 // PortPlaceholder is the token a port template substitutes.
 const PortPlaceholder = "{port}"
 
-// candidateConfigs lists the config locations seen in the wild, most specific
-// first. A project that keeps config somewhere else is handled by editing the
-// generated manifest — detection is a head start, not a straitjacket.
-var candidateConfigs = []struct {
+// candidate is one place a config might live.
+type candidate struct {
 	Path     string
 	Template string
 	Format   manifest.ConfigFormat
-}{
+}
+
+// structuredCandidates are the single-config-file conventions, most specific
+// first.
+var structuredCandidates = []candidate{
 	{"config/config.yaml", "config/config.example.yaml", manifest.FormatYAML},
 	{"configs/config.yaml", "configs/config.example.yaml", manifest.FormatYAML},
 	{"config.yaml", "config.example.yaml", manifest.FormatYAML},
 	{"configs/config.json", "configs/config.example.json", manifest.FormatJSON},
 	{"config.json", "config.example.json", manifest.FormatJSON},
-	{".env", ".env.example", manifest.FormatDotenv},
-	{".env.local", ".env.example", manifest.FormatDotenv},
 }
 
-// findConfigSources returns the config files a project actually has. When only
-// the template exists (a fresh clone), the template is still recorded so
-// `wharf doctor` can say "copy config.example.yaml to config.yaml" instead of
-// letting the service fail on startup with nothing to go on.
+// dotenvCandidates are ordered by which file a project treats as its real
+// config. `.env.local` is an *override* layered on `.env`, not an alternative to
+// it — so a project with only `.env` is complete, and demanding `.env.local`
+// would be a false alarm on every Vite and Next app in the workspace.
+var dotenvCandidates = []candidate{
+	{".env", ".env.example", manifest.FormatDotenv},
+	{".env.local", ".env.local.example", manifest.FormatDotenv},
+}
+
+// findConfigSources returns at most one config file per family: the structured
+// one a Go service reads, and the dotenv one a Node app reads.
 func findConfigSources(dir string) []manifest.ConfigSource {
 	var out []manifest.ConfigSource
-	seen := map[string]bool{}
-
-	for _, c := range candidateConfigs {
-		hasConfig := exists(dir, c.Path)
-		hasTemplate := c.Template != "" && exists(dir, c.Template)
-		if !hasConfig && !hasTemplate {
-			continue
-		}
-		if seen[c.Path] {
-			continue
-		}
-		seen[c.Path] = true
-
-		src := manifest.ConfigSource{Format: c.Format, Path: c.Path}
-		if hasTemplate {
-			src.Template = c.Template
-		}
+	if src, ok := pickConfig(dir, structuredCandidates); ok {
+		out = append(out, src)
+	}
+	if src, ok := pickConfig(dir, dotenvCandidates); ok {
 		out = append(out, src)
 	}
 	return out
+}
+
+// pickConfig returns the first candidate that exists. If none do, it returns the
+// first whose template exists — a fresh clone has the template but not the
+// config, and `wharf doctor` should say "copy this" rather than stay silent
+// until the service dies on startup.
+func pickConfig(dir string, candidates []candidate) (manifest.ConfigSource, bool) {
+	for _, c := range candidates {
+		if exists(dir, c.Path) {
+			src := manifest.ConfigSource{Format: c.Format, Path: c.Path}
+			if c.Template != "" && exists(dir, c.Template) {
+				src.Template = c.Template
+			}
+			return src, true
+		}
+	}
+	for _, c := range candidates {
+		if c.Template != "" && exists(dir, c.Template) {
+			return manifest.ConfigSource{
+				Format:   c.Format,
+				Path:     c.Path,
+				Template: c.Template,
+			}, true
+		}
+	}
+	return manifest.ConfigSource{}, false
 }
 
 // probe reads a config file and extracts the listen port and infra needs.
