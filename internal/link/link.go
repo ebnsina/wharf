@@ -46,11 +46,13 @@ type Resolution struct {
 	// Ambiguous lists the services that all declared this port, when more than
 	// one did and wharf cannot tell which was meant.
 	Ambiguous []string
-	// Inferred marks a target wharf worked out from the variable's name rather
-	// than proved from the port. Reported, never assumed silently: a wrong guess
-	// sends a frontend's traffic to the wrong backend, which looks like a bug in
-	// the backend.
+	// Inferred marks a target wharf worked out rather than proved from the port.
+	// Reported, never assumed silently: a wrong guess sends a frontend's traffic
+	// to the wrong backend, which then looks like a bug in the backend.
 	Inferred bool
+	// Why names the reasoning, so an inference can be checked rather than taken
+	// on trust.
+	Why string
 }
 
 // Stale reports whether the reference points somewhere the target no longer is.
@@ -191,11 +193,20 @@ func Resolve(refs []Ref, services []manifest.Service) []Resolution {
 				break
 			}
 
+			// A sibling in the same repo family is the next strongest signal.
+			// kormi.ai-web reaching an API on a port four services shipped with
+			// means kormi.ai-api, not one of the three unrelated ones.
+			if pick, ok := bySibling(owners, ref.Service); ok {
+				res.Target, res.Want = pick.Name, pick.Berth
+				res.Inferred, res.Why = true, "same project family"
+				break
+			}
+
 			// Otherwise the variable name usually says: VITE_LIVESTREAM_API_URL
 			// means the livestream service, whatever port it happens to use.
 			if pick, ok := byKeyword(owners, ref.Key); ok {
 				res.Target, res.Want = pick.Name, pick.Berth
-				res.Inferred = true
+				res.Inferred, res.Why = true, "the name "+ref.Key
 				break
 			}
 
@@ -206,6 +217,64 @@ func Resolve(refs []Ref, services []manifest.Service) []Resolution {
 		out = append(out, res)
 	}
 	return out
+}
+
+// bySibling picks the candidate that belongs to the same project family.
+//
+// Names are split on the separators people actually use, and the candidate
+// sharing the most leading segments wins: kormi.ai-web and kormi.ai-api share
+// "kormi" and "ai", where kormi-shop shares only "kormi" and the unrelated
+// vidinfra services share nothing. A frontend reaching an API is almost always
+// reaching the one from its own repo.
+//
+// It decides only on a unique winner, and only on a prefix at least two
+// segments deep.
+//
+// One segment is not a family — it is usually just the organisation. Accepting
+// it made wharf match tenbyte-platform to tenbyte-cdn-api on the shared
+// "tenbyte", and repoint a variable called VITE_RUM_API_BASE_URL away from the
+// RUM service and at the CDN. Being wrong here is worse than being unsure: a
+// frontend then calls the wrong backend, and it looks like a bug in the backend.
+const minFamilyDepth = 2
+
+func bySibling(owners []manifest.Service, service string) (manifest.Service, bool) {
+	mine := segments(service)
+	if len(mine) == 0 {
+		return manifest.Service{}, false
+	}
+
+	best, bestDepth, tied := manifest.Service{}, 0, false
+
+	for _, o := range owners {
+		depth := sharedPrefix(mine, segments(o.Name))
+		switch {
+		case depth > bestDepth:
+			best, bestDepth, tied = o, depth, false
+		case depth == bestDepth && depth > 0:
+			tied = true
+		}
+	}
+
+	if bestDepth < minFamilyDepth || tied {
+		return manifest.Service{}, false
+	}
+	return best, true
+}
+
+// segments splits a service name into its parts: "kormi.ai-web" -> [kormi ai web].
+func segments(name string) []string {
+	return strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return r == '-' || r == '.' || r == '_'
+	})
+}
+
+// sharedPrefix counts the leading segments two names have in common.
+func sharedPrefix(a, b []string) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
 }
 
 // byKeyword picks the candidate whose name the variable names.

@@ -217,3 +217,71 @@ func stringsContains(h, n string) bool {
 	}
 	return false
 }
+
+// A sibling in the same repo family is the strongest signal after a
+// self-reference: kormi.ai-web reaching an API on a port four services shipped
+// with means kormi.ai-api.
+func TestResolveDisambiguatesOnProjectFamily(t *testing.T) {
+	dir := t.TempDir()
+	writeEnv(t, dir, ".env", "VITE_API_URL=http://localhost:8080\n")
+
+	web := svc("kormi.ai-web", 3000, 3000)
+	web.Path = dir
+
+	res := Resolve(Scan(web), []manifest.Service{
+		web,
+		svc("kormi.ai-api", 8080, 8080),
+		svc("vidinfra-live-api", 8080, 8105),
+		svc("vidinfra-live-worker", 8080, 8107),
+	})
+
+	if res[0].Target != "kormi.ai-api" {
+		t.Fatalf("resolved to %q, want kormi.ai-api — its sibling in the same repo", res[0].Target)
+	}
+}
+
+// The regression: one shared segment is not a family, it is usually just the
+// organisation. Accepting it matched tenbyte-platform to tenbyte-cdn-api on the
+// shared "tenbyte" and repointed a variable named VITE_RUM_API_BASE_URL away
+// from the RUM service and at the CDN — confidently, and wrongly.
+func TestResolveRejectsAnOrgPrefixAsAFamily(t *testing.T) {
+	dir := t.TempDir()
+	writeEnv(t, dir, ".env", "VITE_RUM_API_BASE_URL=http://localhost:8085/v1\n")
+
+	platform := svc("tenbyte-platform", 5173, 8104)
+	platform.Path = dir
+
+	res := Resolve(Scan(platform), []manifest.Service{
+		platform,
+		svc("rumito", 8085, 8085),
+		svc("tenbyte-cdn-api", 8085, 8103),
+	})
+
+	if res[0].Target == "tenbyte-cdn-api" {
+		t.Fatal("matched on the shared org prefix \"tenbyte\"; one segment is not a project family")
+	}
+	if len(res[0].Ambiguous) == 0 {
+		t.Error("with no usable signal wharf must say it is unsure rather than guess")
+	}
+}
+
+// Only the named entry in a multi-value line changes; the others are untouched.
+func TestApplyRewritesOneEntryInAList(t *testing.T) {
+	dir := t.TempDir()
+	writeEnv(t, dir, ".env",
+		"CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:4000\n")
+
+	api := svc("acme-api", 8000, 8000)
+	api.Path = dir
+
+	res := Resolve(Scan(api), []manifest.Service{api, svc("acme-web", 3000, 8109)})
+	if _, err := Apply(api, res, false); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	want := "CORS_ORIGINS=http://localhost:8109,http://localhost:3001,http://localhost:4000"
+	if got := string(out); !contains(got, want) {
+		t.Errorf("got %q, want only the :3000 entry rewritten", got)
+	}
+}

@@ -30,7 +30,65 @@ func newLinkCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show the edits without making them")
 	cmd.Flags().BoolVar(&force, "force", false, "rewrite even a git-tracked file")
+	cmd.AddCommand(newLinkSetCmd())
 	return cmd
+}
+
+func newLinkSetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set <service> <VAR>=<target>...",
+		Short: "Record which service a config variable points at",
+		Long: "For a variable wharf cannot resolve on its own — a generic VITE_API_URL naming\n" +
+			"a port several services shipped with — say once which service it means. wharf\n" +
+			"keeps the URL correct from then on, however often that service moves.",
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLinkSet(args[0], args[1:])
+		},
+	}
+}
+
+func runLinkSet(service string, pairs []string) error {
+	st, err := store()
+	if err != nil {
+		return err
+	}
+	services, err := st.LoadServices()
+	if err != nil {
+		return err
+	}
+
+	svc, err := requireService(services, []string{service})
+	if err != nil {
+		return err
+	}
+
+	known := map[string]bool{}
+	for _, s := range services {
+		known[s.Name] = true
+	}
+
+	if svc.Links == nil {
+		svc.Links = map[string]string{}
+	}
+
+	for _, pair := range pairs {
+		key, target, ok := strings.Cut(pair, "=")
+		if !ok {
+			return fmt.Errorf("expected VAR=service, got %q", pair)
+		}
+		if !known[target] {
+			return fmt.Errorf("unknown service %q", target)
+		}
+		svc.Links[key] = target
+		ui.Ok("%s: %s → %s", svc.Name, key, ui.Bold.Render(target))
+	}
+
+	if err := st.SaveService(svc); err != nil {
+		return err
+	}
+	ui.Note("run `wharf link` to apply it")
+	return nil
 }
 
 func runLink(names []string, dryRun, force bool) error {
@@ -105,10 +163,9 @@ func runLink(names []string, dryRun, force bool) error {
 		for _, r := range applied {
 			how := r.Target
 			if r.Inferred {
-				// Say that this one was worked out from the variable's name, not
-				// proved from the port. It is right far more often than not, but
-				// the user should be able to check it.
-				how = r.Target + ", matched on " + r.Key
+				// Say how this one was worked out, not merely that it was: an
+				// inference the user cannot check is one they have to trust.
+				how = r.Target + " — inferred from " + r.Why
 			}
 			ui.Ok("%-28s %s → %s  %s",
 				svc.Name,

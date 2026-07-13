@@ -86,9 +86,21 @@ func runBerth(names []string, dryRun, force bool) error {
 
 	// Report tracked configs separately: they are not errors, they are a
 	// deliberate refusal, and the user needs to know a berth was not applied.
+	//
+	// And pin the manifest back to reality. A berth wharf could not write is a
+	// port the service does not listen on — but the gateway, the link rewriter
+	// and the health check would all go on believing it. A manifest that lies
+	// about where a service is turns one refusal into three silent failures.
 	for _, te := range tracked {
 		ui.Warn("%-30s skipped — %s is committed to git", te.Service, filepath.Base(te.File))
 		ui.Note("    its port stays as-is; gitignore the config, or re-run with --force")
+
+		if dryRun {
+			continue
+		}
+		if err := pinToDeclared(st, te.Service); err != nil {
+			ui.Fail("%s — %v", te.Service, err)
+		}
 	}
 
 	for _, c := range changes {
@@ -113,6 +125,29 @@ func runBerth(names []string, dryRun, force bool) error {
 	if len(skipped) > 0 {
 		ui.Note("no writable port key: %v", skipped)
 	}
+	return nil
+}
+
+// pinToDeclared resets a service's berth to the port it actually listens on.
+//
+// wharf assigns a berth, but a service whose config it may not write never moves
+// there. Leaving the assignment in the manifest would have every other part of
+// wharf address a port nothing is on.
+func pinToDeclared(st *manifest.Store, name string) error {
+	svc, err := st.LoadService(name)
+	if err != nil {
+		return err
+	}
+	if svc.Declared == 0 || svc.Berth == svc.Declared {
+		return nil
+	}
+
+	was := svc.Berth
+	svc.Berth = svc.Declared
+	if err := st.SaveService(svc); err != nil {
+		return err
+	}
+	ui.Note("    berth reset %d → %d to match the config wharf may not change", was, svc.Berth)
 	return nil
 }
 
