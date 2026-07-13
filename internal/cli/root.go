@@ -39,6 +39,7 @@ func Execute() error {
 		newBerthCmd(),
 		newBootstrapCmd(),
 		newGatewayCmd(),
+		newInfraCmd(),
 		newDoctorCmd(),
 	)
 	return root.Execute()

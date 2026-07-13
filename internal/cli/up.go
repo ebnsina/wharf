@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/ebnsina/wharf/internal/config"
-	"github.com/ebnsina/wharf/internal/infra"
 	"github.com/ebnsina/wharf/internal/manifest"
 	"github.com/ebnsina/wharf/internal/orchestrator"
 	"github.com/ebnsina/wharf/internal/process"
+	"github.com/ebnsina/wharf/internal/provision"
 	"github.com/ebnsina/wharf/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -39,7 +39,7 @@ func newUpCmd() *cobra.Command {
 			return runUp(args, withInfra, noBerth)
 		},
 	}
-	cmd.Flags().BoolVar(&withInfra, "infra", false, "start missing infrastructure via docker compose where available")
+	cmd.Flags().BoolVar(&withInfra, "infra", false, "provision missing datastores and create their databases")
 	cmd.Flags().BoolVar(&noBerth, "no-berth", false, "do not write berths into config files")
 	cmd.Flags().BoolVar(&all, "all", false, "start every enabled service")
 	return cmd
@@ -65,7 +65,7 @@ func runUp(names []string, withInfra, noBerth bool) error {
 		return fmt.Errorf("nothing to start")
 	}
 
-	if err := ensureInfra(services, withInfra); err != nil {
+	if err := ensureInfra(all, services, withInfra); err != nil {
 		return err
 	}
 	if !noBerth {
@@ -177,62 +177,65 @@ func awaitHealthy(svc manifest.Service) error {
 	})
 }
 
-// ensureInfra reports unreachable datastores, and starts them when asked.
-func ensureInfra(services []manifest.Service, start bool) error {
-	var needs []manifest.Need
-	for _, svc := range services {
-		needs = append(needs, svc.Needs...)
+// ensureInfra checks that every datastore a service needs is actually there —
+// the server *and* the database inside it.
+//
+// A service whose Postgres is up but whose database does not exist fails on its
+// first query, several frames deep in a driver, with a message that names
+// neither the service nor the database. Saying so first is the whole point.
+func ensureInfra(all, services []manifest.Service, provisionIt bool) error {
+	servers, err := provision.PlanFor(all, services)
+	if err != nil {
+		return err
 	}
 
-	statuses := infra.Check(needs)
-	down := infra.Down(statuses)
-	if len(down) == 0 {
-		return nil
-	}
-
-	if !start {
-		for _, s := range down {
-			ui.Fail("%s is not reachable at %s", s.Need.Type, s.Addr)
-		}
-		return fmt.Errorf("%d dependencies are down; start them, or pass --infra to let wharf try", len(down))
-	}
-
-	for _, s := range down {
-		if s.Compose == "" {
-			ui.Fail("%s at %s is down and no compose file provides it", s.Need.Type, s.Addr)
+	var problems int
+	for _, s := range servers {
+		d, ok := provision.DriverFor(s.Type)
+		if !ok {
 			continue
 		}
-		ui.Info("starting %s via %s", s.Need.Type, s.Compose)
-		dir := composeDir(services, s.Compose)
-		if err := infra.ComposeUp(dir, s.Compose); err != nil {
+
+		if !d.Ready(s) {
+			if !provisionIt {
+				ui.Fail("%s is not running at %s", s.Type, s.Addr())
+				problems++
+				continue
+			}
+			if err := bringUp(s, "", false); err != nil {
+				return err
+			}
+			continue
+		}
+
+		missing, err := provision.MissingDatabases(d, s)
+		if err != nil {
+			continue
+		}
+		if len(missing) == 0 {
+			continue
+		}
+
+		if !provisionIt {
+			for _, db := range missing {
+				ui.Fail("%s has no database %q — %s needs it", s.Type, db, s.Databases[db])
+			}
+			problems++
+			continue
+		}
+		created, err := provision.EnsureDatabases(d, s)
+		if err != nil {
 			return err
 		}
-	}
-
-	// Re-check: compose returns as soon as the container is created, which is
-	// well before Postgres is accepting connections.
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(infra.Down(infra.Check(needs))) == 0 {
-			ui.Ok("infrastructure ready")
-			return nil
-		}
-		time.Sleep(time.Second)
-	}
-	return fmt.Errorf("infrastructure did not come up in time")
-}
-
-// composeDir finds the service directory owning a compose file, so docker runs
-// with the right context.
-func composeDir(services []manifest.Service, compose string) string {
-	for _, svc := range services {
-		for _, n := range svc.Needs {
-			if n.Compose == compose {
-				return svc.Path
-			}
+		for _, db := range created {
+			ui.Ok("created database %s", ui.Bold.Render(db))
 		}
 	}
-	return "."
+
+	if problems > 0 {
+		return fmt.Errorf("%d datastore problems; run `wharf infra up` or pass --infra", problems)
+	}
+	return nil
 }
 
 // ensureBerths writes each service's berth into its own config before start.
