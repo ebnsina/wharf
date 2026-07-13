@@ -1,0 +1,635 @@
+/* wharf — harbour at night.
+ *
+ * The palette is taken from navigation lights, because that is the vocabulary
+ * the product already speaks: a berth is a numbered slot, port is red,
+ * starboard is green, and a beacon is amber. Those three colours already mean
+ * contested, docked, and marked — so the page can use colour to say something
+ * true rather than to decorate.
+ */
+
+:root {
+  --harbour:      #0A0F13;
+  --harbour-deep: #070B0E;
+  --deck:         #111A21;
+  --deck-high:    #16222B;
+  --hairline:     #1D2C36;
+
+  --fog:          #DFE8ED;
+  --fog-dim:      #93A5B0;
+  --fog-faint:    #5B6E7A;
+
+  --beacon:       #FFB454;  /* the berth marker, and the one accent */
+  --port:         #FF5F56;  /* contested, failed */
+  --starboard:    #3DD68C;  /* docked, running */
+
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, sans-serif;
+
+  --measure: 68ch;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+  --rhythm: clamp(4rem, 9vw, 7rem);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  margin: 0;
+  background: var(--harbour);
+  color: var(--fog);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+
+  /* A faint horizon: the water is lighter than the sky at the bottom of a
+     harbour at night. It replaces the usual radial "glow" blob. */
+  background-image:
+    linear-gradient(180deg, var(--harbour-deep) 0%, var(--harbour) 45%, #0C141A 100%);
+  background-attachment: fixed;
+}
+
+a { color: var(--beacon); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+:focus-visible {
+  outline: 2px solid var(--beacon);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 1080px;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(12px);
+  background: rgba(10, 15, 19, 0.72);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.masthead__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 56px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: var(--fog);
+}
+.brand:hover { text-decoration: none; }
+.brand__mark { color: var(--beacon); }
+
+.masthead__nav {
+  display: flex;
+  gap: 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.masthead__nav a { color: var(--fog-dim); }
+.masthead__nav a:hover { color: var(--fog); text-decoration: none; }
+.masthead__nav a[aria-current="page"] { color: var(--beacon); }
+
+/* ------------------------------------------------------------------- hero */
+
+.hero { padding-block: clamp(3.5rem, 8vw, 6rem) 0; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fog-faint);
+  margin: 0 0 1.5rem;
+}
+
+.hero__title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(2.1rem, 6vw, 3.9rem);
+  line-height: 1.03;
+  letter-spacing: -0.025em;
+  margin: 0 0 1.5rem;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+.hero__title em {
+  font-style: normal;
+  color: var(--port);
+}
+
+.hero__lede {
+  font-size: clamp(1.02rem, 1.7vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--fog-dim);
+  max-width: 54ch;
+  margin: 0 0 2.25rem;
+}
+
+/* ------------------------------------------------------------- the signature
+ *
+ * The berth board. Not a screenshot and not a stat row: the page opens with the
+ * problem the tool exists for, and resolves it in front of you. Four services
+ * declare the same port; three of them cannot have it; wharf moves them.
+ */
+
+.board {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--deck) 0%, var(--harbour-deep) 100%);
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: clamp(0.72rem, 1.5vw, 0.84rem);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+
+.board__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.015);
+  color: var(--fog-faint);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.board__state {
+  color: var(--port);
+  letter-spacing: 0.08em;
+  text-transform: none;
+  animation: state-swap 13s steps(1, end) infinite;
+}
+
+.board__rows { padding: 0.5rem 0; }
+
+.berth {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.42rem 0.9rem;
+  white-space: nowrap;
+}
+
+.berth__slot {
+  color: var(--fog-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.berth__name {
+  color: var(--fog-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.berth__tag {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+/* The three contested rows carry the whole idea, so they are the only thing on
+   the page that moves — and what moves is the *number*. Watching :8080 become
+   :8105 is the argument; recolouring a port that already reads :8105 would be
+   decoration pretending to be one.
+
+   The two states are stacked in the same grid cell so the row cannot reflow as
+   they swap, and they are staggered so you read them one at a time. */
+.swap {
+  display: inline-grid;
+  vertical-align: baseline;
+}
+.swap > * {
+  grid-area: 1 / 1;
+}
+
+.swap__was { color: var(--port); }
+.swap__now { color: var(--beacon); opacity: 0; }
+
+.berth__tag .swap__was { color: var(--port); }
+.berth__tag .swap__now { color: var(--starboard); }
+
+.berth--moving .swap__was { animation: fade-out 13s ease-in-out infinite; }
+.berth--moving .swap__now { animation: fade-in  13s ease-in-out infinite; }
+.berth--moving .berth__name { animation: name-move 13s ease-in-out infinite; }
+
+.berth--moving:nth-of-type(2) .swap__was,
+.berth--moving:nth-of-type(2) .swap__now,
+.berth--moving:nth-of-type(2) .berth__name { animation-delay: 0.5s; }
+
+.berth--moving:nth-of-type(3) .swap__was,
+.berth--moving:nth-of-type(3) .swap__now,
+.berth--moving:nth-of-type(3) .berth__name { animation-delay: 1s; }
+
+.berth--held .berth__slot { color: var(--fog-dim); }
+.berth--held .berth__name { color: var(--fog); }
+.berth--held .berth__tag  { color: var(--starboard); }
+
+/* The collision holds long enough to be read — three rows, all claiming the same
+   port — before it resolves. A swap you cannot follow is a flicker. */
+@keyframes fade-out {
+  0%, 38%   { opacity: 1; }
+  46%, 90%  { opacity: 0; }
+  100%      { opacity: 1; }
+}
+@keyframes fade-in {
+  0%, 38%   { opacity: 0; }
+  46%, 90%  { opacity: 1; }
+  100%      { opacity: 0; }
+}
+@keyframes name-move {
+  0%, 38%   { color: var(--fog-faint); }
+  46%, 90%  { color: var(--fog); }
+  100%      { color: var(--fog-faint); }
+}
+@keyframes state-swap {
+  0%, 38%   { color: var(--port); }
+  46%, 90%  { color: var(--starboard); }
+  100%      { color: var(--port); }
+}
+
+/* The animation is the argument, not the content. Without it the board still
+   reads — it simply shows the resolved state, which is the outcome anyone
+   arriving here wants to see. */
+@media (prefers-reduced-motion: reduce) {
+  .berth--moving .swap__was,
+  .berth--moving .swap__now,
+  .berth--moving .berth__name,
+  .board__state { animation: none; }
+
+  .berth--moving .swap__was { opacity: 0; }
+  .berth--moving .swap__now { opacity: 1; }
+  .berth--moving .berth__name { color: var(--fog); }
+  .board__state { color: var(--starboard); }
+}
+
+.board__note {
+  padding: 0.7rem 0.9rem;
+  border-top: 1px solid var(--hairline);
+  color: var(--fog-faint);
+  font-size: 0.72rem;
+}
+
+/* ---------------------------------------------------------------- install */
+
+.install {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 2.25rem;
+}
+
+.cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--deck);
+  color: var(--fog);
+  white-space: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.cmd__sigil { color: var(--beacon); user-select: none; }
+
+.copy {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fog-dim);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.copy:hover { color: var(--fog); border-color: var(--fog-faint); }
+.copy[data-copied="true"] { color: var(--starboard); border-color: var(--starboard); }
+
+/* --------------------------------------------------------------- sections */
+
+.band { padding-block: var(--rhythm); }
+.band + .band { border-top: 1px solid var(--hairline); }
+
+.band__title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 3.4vw, 2.15rem);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 0.9rem;
+  max-width: 22ch;
+  text-wrap: balance;
+}
+
+.band__lede {
+  color: var(--fog-dim);
+  max-width: var(--measure);
+  margin: 0 0 2.5rem;
+}
+
+/* Symptoms, not features. Each one is a thing that actually happened in a real
+   workspace, which is why they are stated as complaints rather than benefits. */
+.symptoms {
+  display: grid;
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+
+.symptom {
+  background: var(--harbour);
+  padding: 1.6rem 1.4rem;
+}
+
+.symptom__mark {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--port);
+  margin: 0 0 0.85rem;
+}
+
+.symptom__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--fog);
+}
+
+.symptom__body {
+  margin: 0;
+  color: var(--fog-dim);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+/* --------------------------------------------------------------- terminal */
+
+.term {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--harbour-deep);
+  font-family: var(--mono);
+  font-size: clamp(0.72rem, 1.4vw, 0.82rem);
+  line-height: 1.75;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.term__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.term__dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--hairline);
+}
+.term__dot:first-child { background: #2A3A45; }
+
+.term__body {
+  padding: 0.9rem 1rem;
+  margin: 0;
+  white-space: pre;
+  color: var(--fog-dim);
+}
+
+.term__body b { color: var(--fog); font-weight: 400; }
+.o { color: var(--starboard); }   /* ok */
+.x { color: var(--port); }        /* problem */
+.a { color: var(--beacon); }      /* the thing wharf decided */
+.d { color: var(--fog-faint); }   /* aside */
+
+/* ------------------------------------------------------------------ steps */
+
+.steps { display: grid; gap: 2rem; }
+
+.step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.1rem;
+  align-items: start;
+}
+
+/* Numbered because these genuinely are a sequence — you cannot start a service
+   before wharf knows how, and you cannot route to it before it has a berth. */
+.step__n {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--beacon);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  margin-top: 0.15rem;
+}
+
+.step__title {
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 0 0 0.3rem;
+}
+.step__body {
+  margin: 0 0 0.9rem;
+  color: var(--fog-dim);
+  font-size: 0.94rem;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.foot {
+  border-top: 1px solid var(--hairline);
+  padding-block: 2.5rem 3.5rem;
+  color: var(--fog-faint);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+.foot__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* -------------------------------------------------------------- docs page */
+
+.docs {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  padding-block: 3rem 5rem;
+  align-items: start;
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.toc h2 {
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fog-faint);
+  margin: 0 0 0.9rem;
+  font-weight: 500;
+}
+.toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.05rem;
+}
+.toc a {
+  display: block;
+  color: var(--fog-dim);
+  padding: 0.28rem 0;
+  border-left: 2px solid transparent;
+  padding-left: 0.7rem;
+  margin-left: -0.7rem;
+}
+.toc a:hover {
+  color: var(--fog);
+  border-left-color: var(--hairline);
+  text-decoration: none;
+}
+
+.prose { max-width: var(--measure); min-width: 0; }
+
+.prose h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  letter-spacing: -0.018em;
+  margin: 3.5rem 0 0.9rem;
+  scroll-margin-top: 80px;
+}
+.prose h2:first-child { margin-top: 0; }
+
+.prose h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+  color: var(--fog);
+  scroll-margin-top: 80px;
+}
+
+.prose p { color: var(--fog-dim); margin: 0 0 1.1rem; }
+.prose ul { color: var(--fog-dim); padding-left: 1.1rem; margin: 0 0 1.1rem; }
+.prose li { margin-bottom: 0.4rem; }
+.prose strong { color: var(--fog); font-weight: 600; }
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--deck);
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  color: var(--fog);
+}
+.prose .term { margin: 0 0 1.4rem; }
+.prose .term code { background: none; border: 0; padding: 0; }
+
+/* A note is a caveat the reader needs before they run something, not a decorative
+   callout — so it is marked in beacon, the colour of a thing to look at. */
+.note {
+  border-left: 2px solid var(--beacon);
+  padding: 0.15rem 0 0.15rem 1rem;
+  margin: 0 0 1.4rem;
+  color: var(--fog-dim);
+  font-size: 0.94rem;
+}
+.note strong { color: var(--beacon); font-weight: 600; }
+
+.cmdlist {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 0 0 1.4rem;
+}
+.cmdrow {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 1fr;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  align-items: baseline;
+}
+.cmdrow + .cmdrow { border-top: 1px solid var(--hairline); }
+.cmdrow code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--beacon);
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.cmdrow span { color: var(--fog-dim); }
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 860px) {
+  .docs { grid-template-columns: 1fr; }
+  .toc {
+    position: static;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 1.5rem;
+  }
+  .toc ol {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+  .toc a { border-left: 0; padding-left: 0; margin-left: 0; }
+}
+
+@media (max-width: 560px) {
+  .berth { grid-template-columns: 4.5rem 1fr; }
+  .berth__tag { grid-column: 2; font-size: 0.66rem; }
+  .masthead__nav { gap: 1rem; }
+}

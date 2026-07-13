@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wharf — run your local services without remembering how</title>
+<meta name="description" content="wharf reads how every project in your workspace runs, gives each one a port it owns, and starts it with its config, its databases and its dependencies.">
+
+<meta property="og:title" content="wharf — run your local services without remembering how">
+<meta property="og:description" content="Your services all want :8080. Only one of them can have it.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚓</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <a class="brand" href="./"><span class="brand__mark">⚓</span>wharf</a>
+    <nav class="masthead__nav">
+      <a href="docs.html">Docs</a>
+      <a href="https://github.com/ebnsina/wharf">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- Hero. The thesis is the collision, so the collision is what you see. -->
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Local development, for a workspace that outgrew you</p>
+
+      <h1 class="hero__title">Your services all want <em>:8080</em>. Only one can have it.</h1>
+
+      <p class="hero__lede">
+        wharf reads how every project in your workspace runs, gives each one a port
+        it owns — a <strong>berth</strong> — and starts it with its config, its
+        databases and everything it depends on.
+      </p>
+
+      <div class="install">
+        <code class="cmd" id="install-cmd"><span class="cmd__sigil">$</span>go install github.com/ebnsina/wharf/cmd/wharf@latest</code>
+        <button class="copy" type="button" data-copy="go install github.com/ebnsina/wharf/cmd/wharf@latest">Copy</button>
+      </div>
+
+      <!-- The signature: the problem, resolving itself. -->
+      <div class="board" role="img" aria-label="Four services all declare port 8080. wharf keeps one on 8080 and moves the other three to ports 8105, 8107 and 8108, which they own.">
+        <div class="board__bar">
+          <span>Berth board</span>
+          <span class="board__state" aria-hidden="true">contested → allocated</span>
+        </div>
+
+        <div class="board__rows">
+          <div class="berth berth--held">
+            <span class="berth__slot">:8080</span>
+            <span class="berth__name">kormi.ai-api</span>
+            <span class="berth__tag">docked</span>
+          </div>
+
+          <div class="berth berth--moving">
+            <span class="berth__slot swap">
+              <span class="swap__was">:8080</span>
+              <span class="swap__now">:8105</span>
+            </span>
+            <span class="berth__name">vidinfra-live-api</span>
+            <span class="berth__tag swap">
+              <span class="swap__was">contested</span>
+              <span class="swap__now">docked</span>
+            </span>
+          </div>
+
+          <div class="berth berth--moving">
+            <span class="berth__slot swap">
+              <span class="swap__was">:8080</span>
+              <span class="swap__now">:8107</span>
+            </span>
+            <span class="berth__name">vidinfra-live-worker</span>
+            <span class="berth__tag swap">
+              <span class="swap__was">contested</span>
+              <span class="swap__now">docked</span>
+            </span>
+          </div>
+
+          <div class="berth berth--moving">
+            <span class="berth__slot swap">
+              <span class="swap__was">:8080</span>
+              <span class="swap__now">:8108</span>
+            </span>
+            <span class="berth__name">vidinfra-livestream-api</span>
+            <span class="berth__tag swap">
+              <span class="swap__was">contested</span>
+              <span class="swap__now">docked</span>
+            </span>
+          </div>
+        </div>
+
+        <p class="board__note">
+          Four services shipped with the same port. wharf writes each one’s berth into
+          its own config, and the gateway and every frontend URL follow it there.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- The problem. Symptoms, not features: these are things that happened. -->
+  <section class="band">
+    <div class="wrap">
+      <h2 class="band__title">The knowledge lives in your head, and it is wrong</h2>
+      <p class="band__lede">
+        A workspace of microservices accumulates facts nobody wrote down — and some
+        of them contradict each other.
+      </p>
+
+      <div class="symptoms">
+        <div class="symptom">
+          <p class="symptom__mark">Contested</p>
+          <h3 class="symptom__title">Ports collide</h3>
+          <p class="symptom__body">
+            Four services ship with <code>:8080</code>. They cannot run together, and
+            nothing says so until one fails to bind.
+          </p>
+        </div>
+
+        <div class="symptom">
+          <p class="symptom__mark">Forgotten</p>
+          <h3 class="symptom__title">Every service starts differently</h3>
+          <p class="symptom__body">
+            <code>air</code> here, <code>pnpm dev</code> there, a Makefile target you
+            have to open the Makefile to remember.
+          </p>
+        </div>
+
+        <div class="symptom">
+          <p class="symptom__mark">Silent</p>
+          <h3 class="symptom__title">URLs drift</h3>
+          <p class="symptom__body">
+            A frontend still calls the port its API left. Nothing fails loudly — the
+            requests just go somewhere else.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- What it does. Shown, not claimed. -->
+  <section class="band">
+    <div class="wrap">
+      <h2 class="band__title">It reads your code, not a config you have to write</h2>
+      <p class="band__lede">
+        Point it at a directory. It works out what is there — the run command, the
+        port, the databases, the migration — and writes a manifest you can correct.
+      </p>
+
+      <div class="term">
+        <div class="term__bar"><span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span></div>
+<pre class="term__body"><b>$ wharf scan ~/code</b>
+
+  auth-api        go      service  <span class="a">:8103</span>   <span class="d">postgres, redis</span>
+  billing-api     go      service  <span class="a">:8105</span>   <span class="d">postgres</span>
+  console         node    service  <span class="a">:8100</span>
+  search          python  service  <span class="a">:8000</span>   <span class="d">clickhouse</span>
+  player-sdk      node    library  <span class="d">—</span>
+
+<span class="x">!</span> 3 services were moved off a contested port
+    billing-api      8080 → 8105  <span class="d">(8080 already claimed by auth-api)</span>
+
+<span class="o">✓</span> wrote 5 manifests
+</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- The sequence. Numbered because it genuinely is one. -->
+  <section class="band">
+    <div class="wrap">
+      <h2 class="band__title">Then it makes the manifest true</h2>
+      <p class="band__lede">
+        Each step depends on the one before it. wharf cannot route to a service before
+        it has a berth, and it cannot migrate a database that does not exist.
+      </p>
+
+      <div class="steps">
+
+        <div class="step">
+          <span class="step__n">1</span>
+          <div>
+            <h3 class="step__title">Give each service a port it owns</h3>
+            <p class="step__body">
+              The berth is written into the service’s own config — the local, gitignored
+              one — so the fix holds even when you run the service by hand. Only the port
+              value changes; comments and formatting survive.
+            </p>
+            <div class="term">
+<pre class="term__body"><b>$ wharf berth</b>
+<span class="o">✓</span> billing-api   app.port: 8080 → <span class="a">8105</span>   <span class="d">config/config.yaml</span>
+<span class="x">!</span> live-worker   skipped — config.yaml is committed to git
+</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="step__n">2</span>
+          <div>
+            <h3 class="step__title">Make the databases real</h3>
+            <p class="step__body">
+              Your config already says it wants a Postgres at <code>:5432</code> holding
+              a database called <code>billing</code>. wharf makes that true — in Docker or
+              on your machine, whichever you pick — instead of inventing its own
+              connection details.
+            </p>
+            <div class="term">
+<pre class="term__body"><b>$ wharf infra up</b>
+<span class="x">!</span> clickhouse is not running at localhost:9000
+    <span class="d">search needs the database events</span>
+
+  <b>[d]</b> docker   <span class="d">clickhouse/clickhouse-server — wharf runs and keeps it</span>
+  <b>[l]</b> local    <span class="d">brew services start clickhouse</span>
+
+  choice [d]: <span class="a">d</span>
+<span class="o">✓</span> clickhouse is up at localhost:9000
+<span class="o">✓</span> created database <span class="a">events</span> <span class="d">for search</span>
+</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="step__n">3</span>
+          <div>
+            <h3 class="step__title">Point everything at the new address</h3>
+            <p class="step__body">
+              A frontend reaches its API through a hard-coded URL in a <code>.env</code>.
+              When the API moves, that URL still names the old port — so wharf repoints
+              it, and regenerates the gateway from the same manifests. A route can no
+              longer name a port a service is not on, because nobody types the port twice.
+            </p>
+            <div class="term">
+<pre class="term__body"><b>$ wharf link</b>
+<span class="o">✓</span> console   localhost:8080 → <span class="a">localhost:8105</span>   <span class="d">.env:4  (billing-api)</span>
+<span class="x">!</span> web       .env:2 names :3000, declared by three services
+    <span class="d">say which once: wharf link set web VITE_API_URL=console</span>
+</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="step__n">4</span>
+          <div>
+            <h3 class="step__title">Start it, and watch it</h3>
+            <p class="step__body">
+              Services run as process groups, so nothing is orphaned holding a port when
+              you quit. The dashboard shows what is up, what is still compiling, and what
+              is sitting on a berth that wharf did not start.
+            </p>
+            <div class="term">
+<pre class="term__body"><b>$ wharf up billing-api</b>
+<span class="o">✓</span> postgres ready       <span class="d">localhost:5432/billing</span>
+<span class="o">✓</span> billing-api          <span class="d">http://localhost:8105</span>
+
+<b>$ wharf tui</b>          <span class="d">the dashboard: start, stop, live logs</span>
+</pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Standing in a project. The smallest feature, and the one people notice. -->
+  <section class="band">
+    <div class="wrap">
+      <h2 class="band__title">Inside a project, it already knows which one you mean</h2>
+      <p class="band__lede">
+        Standing in a directory is a statement about which service you are talking
+        about. wharf does not make you say it again.
+      </p>
+
+      <div class="term">
+        <div class="term__bar"><span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span></div>
+<pre class="term__body"><b>$ cd ~/code/billing-api && wharf</b>
+
+  <b>billing-api</b>  <span class="o">running</span>
+  <span class="d">~/code/billing-api</span>
+
+  <span class="d">stack</span>      go
+  <span class="d">url</span>        http://localhost:8105   <span class="d">(moved off :8080 — it was contested)</span>
+  <span class="d">run</span>        air
+  <span class="d">health</span>     GET <span class="o">/v1/health-check</span>
+  <span class="d">migrate</span>    go run ./cmd migrate up
+
+  <span class="o">●</span> postgres   localhost:5432   <span class="d">up</span>
+  <span class="o">●</span> redis      localhost:6379   <span class="d">up</span>
+</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <h2 class="band__title">Try it on the mess you already have</h2>
+      <p class="band__lede">
+        wharf knows nothing about any particular workspace. Point it at a directory
+        and it detects what is there — a new machine, a client’s repo, the same.
+      </p>
+
+      <div class="install">
+        <code class="cmd"><span class="cmd__sigil">$</span>go install github.com/ebnsina/wharf/cmd/wharf@latest</code>
+        <button class="copy" type="button" data-copy="go install github.com/ebnsina/wharf/cmd/wharf@latest">Copy</button>
+      </div>
+
+      <p><a href="docs.html">Read the docs →</a></p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <span>⚓ wharf — MIT</span>
+    <span><a href="https://github.com/ebnsina/wharf">github.com/ebnsina/wharf</a></span>
+  </div>
+</footer>
+
+<script>
+  // Copy buttons. The label changes to say what happened, then reverts — a
+  // button that says "Copied" forever is lying by the time you look back at it.
+  document.querySelectorAll('.copy').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy);
+        button.textContent = 'Copied';
+        button.dataset.copied = 'true';
+      } catch {
+        button.textContent = 'Press ⌘C';
+      }
+      setTimeout(function () {
+        button.textContent = 'Copy';
+        delete button.dataset.copied;
+      }, 1600);
+    });
+  });
+</script>
+
+</body>
+</html>

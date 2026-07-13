@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs — wharf</title>
+<meta name="description" content="How wharf discovers your services, assigns berths, provisions databases, and keeps every URL pointing at the right port.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚓</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <a class="brand" href="./"><span class="brand__mark">⚓</span>wharf</a>
+    <nav class="masthead__nav">
+      <a href="docs.html" aria-current="page">Docs</a>
+      <a href="https://github.com/ebnsina/wharf">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap docs">
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#start">Getting started</a></li>
+      <li><a href="#berths">Berths</a></li>
+      <li><a href="#infra">Databases</a></li>
+      <li><a href="#links">Links</a></li>
+      <li><a href="#gateway">Gateway</a></li>
+      <li><a href="#running">Running</a></li>
+      <li><a href="#manifests">Manifests</a></li>
+      <li><a href="#commands">Commands</a></li>
+    </ol>
+  </nav>
+
+  <main class="prose">
+
+    <h2 id="install">Install</h2>
+    <p>wharf is a single binary. It needs Go 1.24 or newer to build.</p>
+    <div class="term"><pre class="term__body"><code><b>go install github.com/ebnsina/wharf/cmd/wharf@latest</b></code></pre></div>
+    <p>
+      State lives in <code>~/.wharf</code> — the manifests, the log files, and a backup
+      of every config wharf has edited. Set <code>WHARF_HOME</code> to move it.
+    </p>
+
+
+    <h2 id="start">Getting started</h2>
+    <p>Point wharf at a directory of projects. It reads each one and writes a manifest.</p>
+    <div class="term"><pre class="term__body"><code><b>$ wharf scan ~/code</b>
+<b>$ wharf doctor</b>     <span class="d"># what will break, before you start anything</span>
+<b>$ wharf tui</b>        <span class="d"># the dashboard</span></code></pre></div>
+
+    <p>Detection reads what is already there:</p>
+    <ul>
+      <li><strong>Go</strong> — <code>go.mod</code>, <code>.air.toml</code>, Makefile targets, <code>config/config.yaml</code></li>
+      <li><strong>Node</strong> — <code>package.json</code> scripts, the lockfile (so it uses the right package manager), the framework’s port</li>
+      <li><strong>Python</strong> — <code>pyproject.toml</code>, <code>alembic.ini</code>, the ASGI entrypoint</li>
+    </ul>
+
+    <p>
+      It also separates the things you <em>run</em> from the things you only <em>build</em>.
+      An SDK with no dev server is a library: it never gets a port and never appears as
+      something to start.
+    </p>
+
+    <div class="note">
+      <strong>Detection is a starting point, not an authority.</strong>
+      Edit any manifest in <code>~/.wharf/services/</code> to correct it. A rescan keeps
+      your edits.
+    </div>
+
+
+    <h2 id="berths">Berths</h2>
+    <p>
+      A berth is a port a service owns. The name is the point: a berth is a numbered
+      slot, and two ships cannot occupy one.
+    </p>
+    <p>
+      Detected ports collide — several services ship with <code>:8080</code>, several
+      frontends with <code>:5173</code>. wharf assigns each service a port nobody else
+      has, and writes it into that service’s own config.
+    </p>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf berth --dry-run</b>
+<span class="o">✓</span> billing-api   app.port: 8080 → <span class="a">8105</span>    <span class="d">config/config.yaml</span>
+<span class="o">✓</span> dashboard     addr: ":8090" → <span class="a">":8101"</span>   <span class="d">configs/config.yaml</span>
+
+<span class="d">dry run — 2 files would change, none were written</span></code></pre></div>
+
+    <h3>What it writes, and what it will not</h3>
+    <ul>
+      <li><strong>Only the port value changes.</strong> Comments, ordering and formatting survive — the edit is made at the exact position of the value, not by re-serialising the file.</li>
+      <li><strong>The shape is preserved.</strong> A field holding <code>":8080"</code> gets <code>":8105"</code>, not <code>8105</code> — the second is not a listen address and the service would not start.</li>
+      <li><strong>It is idempotent.</strong> Running it twice writes nothing the second time.</li>
+      <li><strong>The original is backed up</strong> to <code>~/.wharf/backups/</code> before the first write.</li>
+    </ul>
+
+    <div class="note">
+      <strong>A config committed to git is never touched.</strong>
+      A berth is a choice about your machine; writing it into a shared file would land
+      it in everyone else’s checkout. wharf skips it, says so, and leaves that service
+      on its declared port. Pass <code>--force</code> if you mean it.
+    </div>
+
+    <p>
+      Because the berth lives in the service’s own config, the fix is durable: run
+      <code>air</code> by hand, outside wharf, and the service still comes up on the
+      right port.
+    </p>
+
+
+    <h2 id="infra">Databases</h2>
+    <p>
+      Your config already says what it wants — a Postgres at <code>localhost:5432</code>
+      holding a database called <code>billing</code>. wharf makes that true, rather than
+      inventing its own connection details and rewriting your config. The DSN is the
+      specification; provisioning conforms to it.
+    </p>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf infra</b>
+<span class="o">●</span> postgres    localhost:5432    <span class="d">up</span>
+    <span class="o">✓</span> billing              <span class="d">billing-api</span>
+    <span class="x">✗</span> auth                 <span class="d">missing — auth-api needs it</span>
+<span class="x">✗</span> clickhouse  localhost:9000    <span class="d">down</span>
+    <span class="d">needs events</span></code></pre></div>
+
+    <p>
+      <code>wharf infra up</code> starts what is missing, asking whether to run it in
+      Docker or on your machine, waits until it actually accepts connections, and then
+      creates the databases.
+    </p>
+
+    <h3>Servers, not services</h3>
+    <p>
+      Datastores are grouped by address, because that is how they exist: one Postgres
+      holds a database for each of six services. Provisioning one container per service
+      would start six Postgres servers — and none of them on the port your configs name.
+    </p>
+
+    <div class="note">
+      <strong>A port held is not a port free.</strong>
+      If something is listening but wharf cannot authenticate, it says so rather than
+      trying to start a container on a port already in use — which fails with a Docker
+      networking error that tells you nothing about the actual problem, which was a
+      password.
+    </div>
+
+
+    <h2 id="links">Links</h2>
+    <p>
+      A frontend reaches its API through a hard-coded URL in a <code>.env</code> or a
+      Vite config. When the API moves off a contested port, that URL still names the old
+      one — so the app calls whatever now answers there, or nothing at all. Nothing
+      fails loudly. The dev server starts, the page loads, and the requests go to the
+      wrong place.
+    </p>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf link</b>
+<span class="o">✓</span> console    localhost:8080 → <span class="a">localhost:8105</span>   <span class="d">.env:4  (billing-api)</span>
+<span class="o">✓</span> dashboard  localhost:8090 → <span class="a">localhost:8101</span>   <span class="d">web/.env:2  (itself)</span></code></pre></div>
+
+    <p>Only the <code>host:port</code> token is rewritten. The scheme, the path, the quoting and the comments are left alone.</p>
+
+    <h3>Working out which service a URL meant</h3>
+    <ul>
+      <li><strong>One owner</strong> — if only one service ever declared that port, it is unambiguous.</li>
+      <li><strong>Itself</strong> — a Vite config in <code>web/</code> proxying to the Go server in the same repo means that server.</li>
+      <li><strong>A sibling</strong> — <code>acme-web</code> reaching an API means <code>acme-api</code>, not an unrelated service that happened to ship with the same port.</li>
+      <li><strong>The variable’s name</strong> — <code>VITE_BILLING_API_URL</code> means the billing service, whatever port it now uses.</li>
+    </ul>
+
+    <div class="note">
+      <strong>Where none of that is enough, wharf stops.</strong>
+      A bare <code>VITE_API_URL</code> naming a port four services shipped with is
+      genuinely ambiguous, and a wrong guess sends a frontend’s traffic to the wrong
+      backend — where it looks like a bug in the backend. Say it once and wharf keeps it
+      right forever:
+    </div>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf link set console VITE_API_URL=billing-api</b></code></pre></div>
+
+
+    <h2 id="gateway">Gateway</h2>
+    <p>
+      If a local reverse proxy fronts your services, wharf generates its config from the
+      same manifests that assign the berths. A route can no longer name a port a service
+      is not on, because nobody types the port twice.
+    </p>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf gateway import /opt/homebrew/etc/nginx/servers/default.conf</b>
+<span class="o">✓</span> /v1/billing/   → billing-api :8105   <span class="d">(was :8080, now on its berth)</span>
+
+<b>$ wharf gateway apply</b></code></pre></div>
+
+    <p>
+      Import matches each route to the service that <em>originally declared</em> its
+      port, not to whoever holds that port now — otherwise a route would be handed to
+      whichever service won the collision.
+    </p>
+    <p>
+      Both <code>nginx</code> and <code>caddy</code> drivers exist. Caddy is
+      recommended: snippets remove the per-route boilerplate, WebSockets need no
+      directives, and local HTTPS is automatic.
+    </p>
+
+
+    <h2 id="running">Running</h2>
+
+    <div class="term"><pre class="term__body"><code><b>$ wharf up billing-api</b>       <span class="d"># the service, its deps and its datastores</span>
+<b>$ wharf up --infra</b>            <span class="d"># provision anything missing first</span>
+<b>$ wharf logs -f</b>               <span class="d"># follow its output</span>
+<b>$ wharf db</b>                    <span class="d"># psql, connection string already filled in</span></code></pre></div>
+
+    <h3>Nothing is left holding a port</h3>
+    <p>
+      A dev command is never one process: <code>air</code> compiles and then runs your
+      binary; <code>pnpm dev</code> reaches Vite through a shell. Signalling only the
+      process wharf started leaves the grandchild alive, still holding the port — and the
+      next start fails with <em>address already in use</em>, which looks unrelated to the
+      cause. Every service runs as a process group and is stopped as one.
+    </p>
+
+    <h3>Health is measured, not assumed</h3>
+    <p>
+      A TCP dial only proves a port is open, and a Go server binds its listener before its
+      dependencies are wired. wharf reads the health endpoint out of your code — one
+      service exposes <code>/healthz</code>, another <code>/v1/health-check</code> — and
+      probes that. Where a service exposes none, it says <em>port only</em> rather than
+      implying it checked something.
+    </p>
+
+    <h3>The dashboard</h3>
+    <div class="cmdlist">
+      <div class="cmdrow"><code>↑ ↓</code><span>Move between services. Click works too.</span></div>
+      <div class="cmdrow"><code>s / x / r</code><span>Start, stop, restart.</span></div>
+      <div class="cmdrow"><code>/</code><span>Filter by name.</span></div>
+      <div class="cmdrow"><code>tab</code><span>Move focus between the list and the log.</span></div>
+      <div class="cmdrow"><code>?</code><span>Keys, and what each status means.</span></div>
+    </div>
+
+    <p>
+      A berth held by a process wharf did not start gets its own status. Calling it
+      <em>stopped</em> would send you hunting for a bug in the service, rather than for
+      whatever is already sitting on its port.
+    </p>
+
+
+    <h2 id="manifests">Manifests</h2>
+    <p>
+      One YAML file per service, under <code>~/.wharf/services/</code>. Generated by
+      <code>scan</code>, then yours to correct.
+    </p>
+
+    <div class="term"><pre class="term__body"><code>name: billing-api
+path: /Users/you/code/billing-api
+kind: service
+stack: go
+berth: 8105
+declared_berth: 8080      <span class="d"># what it used to ask for</span>
+
+processes:
+  - name: api
+    cmd: air
+    primary: true
+  - name: worker
+    cmd: air -c .air.worker.toml
+    autostart: false      <span class="d"># start it from the dashboard when you need it</span>
+
+config:
+  - format: yaml
+    path: config/config.yaml
+    port_key: app.port
+    port_template: "{port}"
+
+needs:
+  - type: postgres
+    dsn: postgres://postgres@localhost:5432/billing
+
+health:
+  type: http
+  path: /v1/health-check
+
+links:
+  VITE_API_URL: console   <span class="d"># which service a variable points at</span>
+
+lifecycle:
+  migrate: go run ./cmd migrate up</code></pre></div>
+
+    <p>
+      <code>declared_berth</code> is the port the project originally asked for. It is
+      kept because the outside world still refers to services by it — an old gateway
+      route, a URL in a <code>.env</code> — and matching those against the
+      <em>current</em> occupant of that port would hand them to whichever service won
+      the collision.
+    </p>
+
+
+    <h2 id="commands">Commands</h2>
+    <p>Anything that takes a service name defaults to the project you are standing in.</p>
+
+    <div class="cmdlist">
+      <div class="cmdrow"><code>wharf</code><span>Inside a project: everything about it.</span></div>
+      <div class="cmdrow"><code>wharf scan &lt;dir&gt;</code><span>Discover projects and write manifests.</span></div>
+      <div class="cmdrow"><code>wharf ls</code><span>Services, berths, what is running.</span></div>
+      <div class="cmdrow"><code>wharf doctor</code><span>Contested ports, missing configs, dead upstreams.</span></div>
+      <div class="cmdrow"><code>wharf tui</code><span>The dashboard.</span></div>
+      <div class="cmdrow"><code>wharf up</code><span>Start a service, its dependencies and its datastores.</span></div>
+      <div class="cmdrow"><code>wharf logs</code><span>What it printed. <code>-f</code> to follow.</span></div>
+      <div class="cmdrow"><code>wharf db</code><span>A database shell, already connected.</span></div>
+      <div class="cmdrow"><code>wharf berth</code><span>Write each service’s berth into its config.</span></div>
+      <div class="cmdrow"><code>wharf link</code><span>Repoint the URLs one project uses to reach another.</span></div>
+      <div class="cmdrow"><code>wharf infra</code><span>Datastores, and the databases inside them.</span></div>
+      <div class="cmdrow"><code>wharf gateway</code><span>Generate the reverse-proxy config.</span></div>
+      <div class="cmdrow"><code>wharf bootstrap</code><span>Fresh clone → config, install, migrate, seed.</span></div>
+    </div>
+
+    <p style="margin-top:2.5rem"><a href="./">← Back</a></p>
+
+  </main>
+</div>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <span>⚓ wharf — MIT</span>
+    <span><a href="https://github.com/ebnsina/wharf">github.com/ebnsina/wharf</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
