@@ -1,0 +1,9 @@
+bin/
+tmp/
+dist/
+*.log
+.DS_Store
+
+# internal only — not committed
+docs/
+data/
