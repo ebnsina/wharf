@@ -57,7 +57,15 @@ func (d GoDetector) Detect(dir string) (manifest.Service, bool) {
 	}
 
 	if svc.Berth > 0 {
-		svc.Health = &manifest.Health{Type: "tcp", TimeoutSeconds: 30}
+		// Probe the endpoint the service actually exposes. A TCP dial only proves
+		// the port is open, and a Go server binds its listener before its
+		// dependencies are wired — so the port answers while the app is still
+		// starting up.
+		if path := HealthPath(dir); path != "" {
+			svc.Health = &manifest.Health{Type: "http", Path: path, TimeoutSeconds: 120}
+		} else {
+			svc.Health = &manifest.Health{Type: "tcp", TimeoutSeconds: 120}
+		}
 	}
 	return svc, true
 }

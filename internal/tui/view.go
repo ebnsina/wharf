@@ -329,6 +329,39 @@ func (m *Model) renderFacts(e *entry, inner int) string {
 		}
 	}
 
+	// How wharf decides this service is up. Worth showing precisely because it
+	// differs per service: one exposes /healthz, another /health-check, and one
+	// exposes nothing at all — in which case wharf can only watch the port, and
+	// should say so rather than imply it checked something.
+	if h := e.svc.Health; h != nil && e.svc.Berth > 0 {
+		switch h.Type {
+		case "http":
+			lines = append(lines, fact("health",
+				stMuted.Render("GET ")+lipgloss.NewStyle().Foreground(green).Render(h.Path)))
+		default:
+			lines = append(lines, fact("health",
+				stFaint.Render("port only — no health endpoint found")))
+		}
+	}
+
+	// Only the processes that exist, and only when there is more than the one.
+	// A service with a worker is a different thing from one without, and the pane
+	// should look different.
+	var extra []string
+	for _, p := range e.svc.Processes {
+		if p.Primary {
+			continue
+		}
+		label := p.Name
+		if !p.ShouldAutostart() {
+			label += stFaint.Render(" (off)")
+		}
+		extra = append(extra, label)
+	}
+	if len(extra) > 0 {
+		lines = append(lines, fact("also", strings.Join(extra, stFaint.Render("  ·  "))))
+	}
+
 	if e.status == StatusForeign {
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(blue).
 			Render("this berth is held by a process wharf did not start"))

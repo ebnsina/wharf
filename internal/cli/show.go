@@ -82,6 +82,16 @@ func showService(all []manifest.Service, svc manifest.Service) error {
 		row(label, cmd)
 	}
 
+	// How wharf decides this service is up — which differs per service, and for
+	// some is nothing at all.
+	if h := svc.Health; h != nil && svc.Berth > 0 {
+		if h.Type == "http" {
+			row("health", "GET "+ui.Green.Render(h.Path))
+		} else {
+			row("health", ui.Dim.Render("port only — no health endpoint found"))
+		}
+	}
+
 	if svc.Lifecycle.Migrate != "" {
 		row("migrate", svc.Lifecycle.Migrate)
 	}
