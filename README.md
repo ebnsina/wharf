@@ -49,7 +49,7 @@ the same manifests that assign the berths. A route can no longer point at a port
 a service is not on, because nobody types the port twice.
 
 ```sh
-wharf gateway import /opt/homebrew/etc/nginx/servers/default.conf
+wharf gateway import path/to/your/nginx.conf
 wharf gateway apply
 ```
 
@@ -68,12 +68,12 @@ Detection is a starting point, not an authority — edit any manifest to correct
 it, and a rescan keeps your edits.
 
 ```yaml
-name: tenbyte-cdn-api
-path: /Users/you/code/tenbyte-cdn-api
+name: billing-api
+path: /Users/you/code/billing-api
 kind: service
 stack: go
 berth: 8103
-declared_berth: 8085      # what it used to ask for
+declared_berth: 8080      # what it used to ask for
 processes:
   - name: api
     cmd: air
@@ -89,7 +89,7 @@ config:
     port_template: "{port}"
 needs:
   - type: postgres
-    dsn: postgres://postgres@localhost:5432/tenbyte_cdn
+    dsn: postgres://postgres@localhost:5432/billing
   - type: redis
     dsn: redis://localhost:6379
 lifecycle:

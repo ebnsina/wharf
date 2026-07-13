@@ -10,11 +10,11 @@ import (
 // alternative — a decode/re-encode round trip — silently destroys the comments
 // in a developer's local config.
 func TestSetValueYAMLPreservesEverythingElse(t *testing.T) {
-	const src = `# Tenbyte CDN — local config
+	const src = `# Example service — local config
 app:
-  name: "Tenbyte CDN"   # display name
+  name: "example-api"   # display name
   host: "0.0.0.0"
-  port: 8085            # collides with rumito
+  port: 8085            # collides with another service
   debug: false
 
 database:
@@ -33,7 +33,7 @@ database:
 	}
 
 	got := string(out)
-	if !strings.Contains(got, "port: 8103            # collides with rumito") {
+	if !strings.Contains(got, "port: 8103            # collides with another service") {
 		t.Errorf("port not replaced in place, or trailing comment lost:\n%s", got)
 	}
 	// The database port must be untouched — it is a different key that happens
@@ -42,8 +42,8 @@ database:
 		t.Errorf("database port was disturbed:\n%s", got)
 	}
 	for _, must := range []string{
-		"# Tenbyte CDN — local config",
-		`name: "Tenbyte CDN"   # display name`,
+		"# Example service — local config",
+		`name: "example-api"   # display name`,
 		`host: "0.0.0.0"`,
 		"debug: false",
 	} {

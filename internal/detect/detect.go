@@ -35,7 +35,7 @@ var registry = []Detector{
 // Scan walks the immediate children of root and detects a Service for each.
 // It descends one extra level into directories that are plainly monorepos
 // (no project marker of their own, but children that have one), which is how
-// cdn-labs/{cdn-labs-api,cdn-labs-web} is picked up.
+// a monorepo like acme/{acme-api,acme-web} is picked up.
 func Scan(root string) ([]manifest.Service, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -90,8 +90,8 @@ func scanChildren(dir string) []manifest.Service {
 // manifest silently overwrites another.
 //
 // The parent prefix is skipped when the child already carries it, so
-// cdn-labs/cdn-labs-api stays cdn-labs-api rather than becoming
-// cdn-labs-cdn-labs-api.
+// acme/acme-api stays acme-api rather than becoming
+// acme-acme-api.
 func qualify(parent, child string) string {
 	if strings.HasPrefix(child, parent) {
 		return child

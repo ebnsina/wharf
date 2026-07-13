@@ -60,7 +60,7 @@ type BerthRange struct {
 type GatewayConfig struct {
 	// Driver is "caddy", "nginx", or "" to disable gateway management.
 	Driver string `yaml:"driver"`
-	// Host is the virtual host services are routed under, e.g. api.tenbyte.test.
+	// Host is the virtual host services are routed under, e.g. api.local.test.
 	Host string `yaml:"host"`
 	// ConfigPath is where the generated gateway config is written.
 	ConfigPath string `yaml:"config_path"`
