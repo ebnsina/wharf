@@ -36,6 +36,14 @@ const (
 	StatusForeign
 )
 
+// pane identifies which half of the dashboard has focus.
+type pane int
+
+const (
+	focusList pane = iota
+	focusLogs
+)
+
 // entry is one row: a manifest plus its live state.
 type entry struct {
 	svc    manifest.Service
@@ -70,8 +78,10 @@ type Model struct {
 	width    int
 	height   int
 	err      error
-	// logFocus routes scroll keys to the log pane instead of the service list.
-	logFocus bool
+	// focus decides which pane the arrow keys drive.
+	focus pane
+	// showHelp overlays the key reference.
+	showHelp bool
 	// following pins the log pane to the newest line, the behaviour you want
 	// until you scroll up to read something.
 	following bool
@@ -151,7 +161,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Rows consumed around the log body: header(1) + footer(1) +
 		// pane border(2) + pane title(1).
 		logWidth := max(msg.Width-listWidth-6, minPaneWidth)
-		logHeight := max(msg.Height-6, minPaneHeight)
+		logHeight := max(msg.Height-12, minPaneHeight)
 
 		if !m.ready {
 			m.viewport = viewport.New(logWidth, logHeight)
@@ -205,10 +215,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Sequence(m.stopAll(), tea.Quit)
 
 	case "tab":
-		m.logFocus = !m.logFocus
+		if m.focus == focusList {
+			m.focus = focusLogs
+		} else {
+			m.focus = focusList
+		}
+
+	case "?":
+		m.showHelp = !m.showHelp
 
 	case "up", "k":
-		if m.logFocus {
+		if m.focus == focusLogs {
 			m.following = false
 			m.viewport.LineUp(1)
 			return m, nil
@@ -219,7 +236,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "down", "j":
-		if m.logFocus {
+		if m.focus == focusLogs {
 			m.viewport.LineDown(1)
 			if m.viewport.AtBottom() {
 				m.following = true
