@@ -123,6 +123,7 @@ func (m *Model) renderFooter() string {
 		{"s", "start"},
 		{"x", "stop"},
 		{"r", "restart"},
+		{"/", "filter"},
 		{"⇥", "pane"},
 		{"?", "help"},
 		{"q", "quit"},
@@ -148,15 +149,15 @@ func (m *Model) listRows() int {
 // thirty services simply runs off the bottom.
 func (m *Model) window() (start, end int) {
 	rows := m.listRows()
-	if len(m.entries) <= rows {
-		return 0, len(m.entries)
+	if len(m.view) <= rows {
+		return 0, len(m.view)
 	}
 	start = m.cursor - rows/2
 	if start < 0 {
 		start = 0
 	}
-	if start+rows > len(m.entries) {
-		start = len(m.entries) - rows
+	if start+rows > len(m.view) {
+		start = len(m.view) - rows
 	}
 	return start, start + rows
 }
@@ -165,14 +166,31 @@ func (m *Model) renderList(height int) string {
 	inner := listWidth - 2
 	start, end := m.window()
 
-	label := stLabel.Render(spaced("SERVICES"))
-	if len(m.entries) > m.listRows() {
-		label += stFaint.Render(fmt.Sprintf("   %d/%d", m.cursor+1, len(m.entries)))
+	// The filter box replaces the section label while it is active: the two
+	// occupy the same slot, so the list below never shifts.
+	var label string
+	switch {
+	case m.filtering:
+		label = lipgloss.NewStyle().Foreground(accent).Render("/ ") +
+			stFg.Render(m.filter) +
+			lipgloss.NewStyle().Foreground(accent).Blink(true).Render("▏")
+	case m.filter != "":
+		label = stFaint.Render("/ ") + stMuted.Render(m.filter) +
+			stFaint.Render(fmt.Sprintf("   %d", len(m.view)))
+	default:
+		label = stLabel.Render(spaced("SERVICES"))
+		if len(m.view) > m.listRows() {
+			label += stFaint.Render(fmt.Sprintf("   %d/%d", m.cursor+1, len(m.view)))
+		}
 	}
 
 	rows := []string{"", label, ""}
 	for i := start; i < end; i++ {
 		rows = append(rows, m.renderRow(i, inner))
+	}
+
+	if len(m.view) == 0 {
+		rows = append(rows, "", stFaint.Render("  no match"))
 	}
 
 	return lipgloss.NewStyle().
@@ -188,7 +206,7 @@ func (m *Model) renderList(height int) string {
 // %-*s counts bytes, and the ellipsis is three bytes but one column — so exactly
 // the rows that needed truncating would overflow their pane.
 func (m *Model) renderRow(i, inner int) string {
-	e := m.entries[i]
+	e := m.view[i]
 	selected := i == m.cursor
 
 	glyph, color, _ := statusOf(e.status)
@@ -365,6 +383,8 @@ func (m *Model) renderHelp() string {
 		{"x", "stop"},
 		{"r", "restart"},
 		{"", ""},
+		{"/", "filter services by name — esc clears"},
+		{"", ""},
 		{"tab", "switch focus between the list and the logs"},
 		{"g", "follow the log tail"},
 		{"b / f", "scroll the log half a page"},
@@ -384,6 +404,10 @@ func (m *Model) renderHelp() string {
 		}
 		b.WriteString("  " + stKey.Width(14).Render(r[0]) + stMuted.Render(r[1]) + "\n")
 	}
+
+	b.WriteString("\n" + stLabel.Render(spaced("MOUSE")) + "\n\n")
+	b.WriteString("  " + stKey.Width(14).Render("click") + stMuted.Render("select a service, or focus a pane") + "\n")
+	b.WriteString("  " + stKey.Width(14).Render("wheel") + stMuted.Render("scroll the list or the log under the pointer") + "\n")
 
 	b.WriteString("\n" + stLabel.Render(spaced("STATUS")) + "\n\n")
 	for _, s := range []Status{StatusHealthy, StatusStarting, StatusFailed, StatusForeign, StatusStopped} {

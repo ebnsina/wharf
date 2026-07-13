@@ -87,6 +87,12 @@ type Model struct {
 	focus pane
 	// showHelp overlays the key reference.
 	showHelp bool
+
+	// view is the filtered slice of entries the list actually shows; cursor
+	// indexes into it, not into entries. filter is the query behind it.
+	view      []*entry
+	filter    string
+	filtering bool
 	// following pins the log pane to the newest line, the behaviour you want
 	// until you scroll up to read something.
 	following bool
@@ -129,7 +135,25 @@ func New(st *manifest.Store, services []manifest.Service) *Model {
 	sort.Slice(m.entries, func(i, j int) bool {
 		return m.entries[i].svc.Name < m.entries[j].svc.Name
 	})
+	m.refilter()
 	return m
+}
+
+// refilter rebuilds the visible slice, keeping the cursor in range. A substring
+// match is enough: these are service names a developer already half-remembers,
+// not arbitrary text.
+func (m *Model) refilter() {
+	m.view = m.view[:0]
+	q := strings.ToLower(m.filter)
+
+	for _, e := range m.entries {
+		if q == "" || strings.Contains(strings.ToLower(e.svc.Name), q) {
+			m.view = append(m.view, e)
+		}
+	}
+	if m.cursor >= len(m.view) {
+		m.cursor = max(len(m.view)-1, 0)
+	}
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -184,6 +208,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case procEvent:
 		m.applyEvent(process.Event(msg))
 		// Re-arm immediately: dropping this would stall all further output.
@@ -226,7 +253,48 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// While filtering, most keys are text. Only escape and enter get out, or the
+	// letters "s" and "x" would start and stop services instead of typing.
+	if m.filtering {
+		switch msg.String() {
+		case "esc":
+			m.filtering = false
+			m.filter = ""
+			m.refilter()
+			m.refreshLog()
+		case "enter":
+			m.filtering = false
+		case "backspace":
+			if m.filter != "" {
+				m.filter = m.filter[:len(m.filter)-1]
+				m.refilter()
+				m.refreshLog()
+			}
+		case "up", "down":
+			return m.moveCursor(msg.String())
+		default:
+			if len(msg.Runes) == 1 {
+				m.filter += string(msg.Runes)
+				m.refilter()
+				m.refreshLog()
+			}
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
+
+	case "/":
+		m.filtering = true
+		return m, nil
+
+	case "esc":
+		if m.filter != "" {
+			m.filter = ""
+			m.refilter()
+			m.refreshLog()
+		}
+		return m, nil
 
 	case "q", "ctrl+c":
 		// Stop everything wharf started. Leaving processes behind on quit is
@@ -262,7 +330,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.cursor < len(m.entries)-1 {
+		if m.cursor < len(m.view)-1 {
 			m.cursor++
 			m.refreshLog()
 		}
@@ -272,7 +340,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshLog()
 
 	case "end":
-		m.cursor = len(m.entries) - 1
+		m.cursor = max(len(m.view)-1, 0)
 		m.refreshLog()
 
 	case "s", "enter":
@@ -314,6 +382,93 @@ func (m *Model) anyStarting() bool {
 		}
 	}
 	return false
+}
+
+// moveCursor lets the arrow keys still navigate while a filter is being typed.
+func (m *Model) moveCursor(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down":
+		if m.cursor < len(m.view)-1 {
+			m.cursor++
+		}
+	}
+	m.refreshLog()
+	return m, nil
+}
+
+// handleMouse makes the dashboard directly manipulable: click a service to
+// select it, double-click to start it, and scroll whichever pane the pointer is
+// over. A dashboard you can only drive blind through key chords is harder to use
+// than one you can point at.
+func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	overList := msg.X < listWidth
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if overList {
+			if m.cursor > 0 {
+				m.cursor--
+				m.refreshLog()
+			}
+			return m, nil
+		}
+		// Scrolling up in the log means you want to read something, so stop the
+		// tail from yanking you back to the bottom.
+		m.following = false
+		m.viewport.LineUp(3)
+		return m, nil
+
+	case tea.MouseButtonWheelDown:
+		if overList {
+			if m.cursor < len(m.view)-1 {
+				m.cursor++
+				m.refreshLog()
+			}
+			return m, nil
+		}
+		m.viewport.LineDown(3)
+		if m.viewport.AtBottom() {
+			m.following = true
+		}
+		return m, nil
+
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return m, nil
+		}
+		// Clicking a pane focuses it, which is what every other pane-based UI
+		// does and what a hand reaching for the mouse expects.
+		if !overList {
+			m.focus = focusLogs
+			return m, nil
+		}
+		m.focus = focusList
+
+		if i, ok := m.rowAt(msg.Y); ok {
+			m.cursor = i
+			m.refreshLog()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// rowAt maps a screen row to a service index, accounting for the header, the
+// section label and the current scroll position.
+func (m *Model) rowAt(y int) (int, bool) {
+	// header(2) + blank(1) + label(1) + blank(1)
+	const firstRow = 5
+
+	start, end := m.window()
+	i := start + (y - firstRow)
+	if y < firstRow || i < start || i >= end {
+		return 0, false
+	}
+	return i, true
 }
 
 // applyEvent folds a supervisor event into the model.
@@ -462,10 +617,10 @@ func (m *Model) stopAll() tea.Cmd {
 }
 
 func (m *Model) current() *entry {
-	if m.cursor < 0 || m.cursor >= len(m.entries) {
+	if m.cursor < 0 || m.cursor >= len(m.view) {
 		return nil
 	}
-	return m.entries[m.cursor]
+	return m.view[m.cursor]
 }
 
 func (m *Model) find(name string) *entry {

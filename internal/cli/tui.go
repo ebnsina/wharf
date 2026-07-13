@@ -37,9 +37,11 @@ func runTUI() error {
 
 	model := tui.New(st, services)
 
-	// AltScreen keeps the dashboard from scrolling the user's scrollback away,
-	// and restores the terminal on exit.
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// AltScreen keeps the dashboard from scrolling the user's scrollback away
+	// and restores the terminal on exit. Cell-motion mouse mode gives click and
+	// wheel events, which is the difference between a dashboard you point at and
+	// one you can only drive from memory.
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }
