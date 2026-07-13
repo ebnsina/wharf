@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"net"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ebnsina/wharf/internal/manifest"
+	"github.com/ebnsina/wharf/internal/process"
 )
 
 func testModel(names ...string) *Model {
@@ -151,5 +154,59 @@ func TestRowAtMapsClicksToServices(t *testing.T) {
 	}
 	if _, ok := m.rowAt(99); ok {
 		t.Error("a click past the last service should select nothing")
+	}
+}
+
+// The bug that made the dashboard contradict its own logs.
+//
+// A slow first compile outlasts the readiness probe, so the service is marked
+// failed. Then reconcile only ever promoted a *stopped* service, so once failed
+// it stayed failed — while the log beside it said "listening and serving HTTP".
+// The label has to be able to disagree with the past.
+func TestReconcileRecoversFromAFailedProbe(t *testing.T) {
+	m := testModel("slow-api")
+	e := m.entries[0]
+
+	// It was marked failed when the probe timed out...
+	e.status = StatusFailed
+	e.failure = "still not listening on port 8088"
+
+	// ...but the process is alive and now answering on its berth.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	e.svc.Berth = ln.Addr().(*net.TCPAddr).Port
+	e.group = process.NewGroup("slow-api", []process.Spec{
+		{Service: "slow-api", Name: "api", Cmd: "sleep 30"},
+	})
+	if err := e.group.Start(nil); err != nil {
+		t.Fatal(err)
+	}
+	defer e.group.Stop(2 * time.Second)
+
+	m.reconcile()
+
+	if e.status != StatusHealthy {
+		t.Errorf("status = %v, want healthy — the process is running and the berth answers", e.status)
+	}
+	if e.failure != "" {
+		t.Errorf("failure = %q, want it cleared once the service recovered", e.failure)
+	}
+}
+
+// A service that really is dead must stay marked failed.
+func TestReconcileKeepsARealFailureFailed(t *testing.T) {
+	m := testModel("broken-api")
+	e := m.entries[0]
+	e.status = StatusFailed
+	e.failure = "the process exited without listening on port 9999"
+	e.svc.Berth = 9999 // nothing is listening
+
+	m.reconcile()
+
+	if e.status != StatusFailed {
+		t.Errorf("status = %v, want it to stay failed — nothing is running", e.status)
 	}
 }

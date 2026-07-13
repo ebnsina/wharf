@@ -1,7 +1,9 @@
 package process
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -135,5 +137,51 @@ func TestRingBufferKeepsOnlyTheTail(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("tail = %q, want %q", got, want)
 		}
+	}
+}
+
+// A readiness wait must end the moment the process dies, not when a stopwatch
+// runs out. Otherwise a service that crashed on startup makes the user sit
+// through a timeout for an answer already known.
+func TestWaitHealthyFailsFastWhenTheProcessDies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	dead := func() bool { return false }
+
+	start := time.Now()
+	err := WaitHealthy(ctx, Health{Type: "tcp", Port: 59999}, dead)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("a dead process that never opened its port is a failure")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("took %v — it should give up as soon as the process is gone, not wait out the timeout", elapsed)
+	}
+	if !strings.Contains(err.Error(), "exited") {
+		t.Errorf("error = %q; it should say the process exited, not that time ran out", err)
+	}
+}
+
+// A process that is merely slow is not a failure. A Go service under air spends
+// its first minute compiling, and a stopwatch cannot tell that from a hang.
+func TestWaitHealthyKeepsWaitingWhileTheProcessLives(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+
+	alive := func() bool { return true }
+
+	start := time.Now()
+	err := WaitHealthy(ctx, Health{Type: "tcp", Port: 59999}, alive)
+
+	if err == nil {
+		t.Fatal("expected the context deadline to end the wait")
+	}
+	if elapsed := time.Since(start); elapsed < 600*time.Millisecond {
+		t.Errorf("gave up after %v — a live process should be waited on", elapsed)
+	}
+	if strings.Contains(err.Error(), "exited") {
+		t.Errorf("error = %q; the process was alive, so this is a timeout, not an exit", err)
 	}
 }

@@ -94,8 +94,16 @@ type Health struct {
 	Path string
 }
 
-// WaitHealthy blocks until the service answers or ctx is done.
-func WaitHealthy(ctx context.Context, h Health) error {
+// WaitHealthy blocks until the service answers, its processes die, or ctx is
+// done.
+//
+// alive reports whether the service's processes are still running; it may be
+// nil. Watching it is what makes the wait honest: a Go service under `air` spends
+// its first minute compiling, and a stopwatch cannot tell that from a hang. A
+// process that is still working is not a failure — a process that has exited
+// without opening its port is, and that is worth saying immediately rather than
+// making the user wait out a timeout for an answer already known.
+func WaitHealthy(ctx context.Context, h Health, alive func() bool) error {
 	if h.Port == 0 {
 		return nil // nothing to probe
 	}
@@ -107,12 +115,25 @@ func WaitHealthy(ctx context.Context, h Health) error {
 		if probe(h) {
 			return nil
 		}
+		if alive != nil && !alive() {
+			return fmt.Errorf("the process exited without listening on port %d", h.Port)
+		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for %s on port %d", h.Type, h.Port)
+			return fmt.Errorf(
+				"still not listening on port %d after %s — it may only be slow to build",
+				h.Port, timeoutOf(ctx))
 		case <-ticker.C:
 		}
 	}
+}
+
+// timeoutOf renders how long a context allowed, for the message above.
+func timeoutOf(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		return time.Until(deadline).Truncate(time.Second) * -1
+	}
+	return 0
 }
 
 func probe(h Health) bool {

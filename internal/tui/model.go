@@ -52,6 +52,9 @@ type entry struct {
 	group  *process.Group
 	status Status
 	logs   []string
+	// failure is why the service last failed, shown in the pane rather than
+	// buried as one line among thousands of log lines nobody will scroll back to.
+	failure string
 }
 
 // runningProcesses counts the live processes in this service's group.
@@ -231,8 +234,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if e := m.find(msg.service); e != nil {
 			if msg.ok {
 				e.status = StatusHealthy
+				e.failure = ""
 			} else {
 				e.status = StatusFailed
+				e.failure = msg.err.Error()
 				e.logs = append(e.logs, "wharf: "+msg.err.Error())
 			}
 			m.refreshLog()
@@ -507,7 +512,8 @@ func (m *Model) applyEvent(ev process.Event) {
 	case process.EventExit:
 		if ev.Err != nil {
 			e.status = StatusFailed
-			e.logs = append(e.logs, "wharf: "+ev.Process+" exited: "+ev.Err.Error())
+			e.failure = ev.Process + " exited: " + ev.Err.Error()
+			e.logs = append(e.logs, "wharf: "+e.failure)
 		} else if e.group != nil && !e.group.Running() {
 			e.status = StatusStopped
 		}
@@ -524,14 +530,29 @@ func (m *Model) reconcile() {
 	for _, e := range m.entries {
 		switch {
 		case e.group != nil && e.group.Running():
-			if e.status == StatusStopped {
+			// A running process that answers on its berth is up, whatever wharf
+			// concluded earlier.
+			//
+			// Recovering from Failed is the point. A slow first compile can
+			// outlast the readiness probe, and without this the service would
+			// stay marked "failed" for as long as the dashboard was open — while
+			// its own log said it was listening. The label has to be able to
+			// disagree with the past.
+			if e.svc.Berth > 0 && berth.InUse(e.svc.Berth) {
+				e.status = StatusHealthy
+				e.failure = ""
+				continue
+			}
+			if e.status == StatusStopped || e.status == StatusHealthy {
 				e.status = StatusStarting
 			}
+
 		case e.svc.Berth > 0 && berth.InUse(e.svc.Berth):
 			// Not ours, but the berth is taken.
 			if e.group == nil {
 				e.status = StatusForeign
 			}
+
 		case e.status != StatusFailed:
 			e.status = StatusStopped
 		}
@@ -570,6 +591,7 @@ func (m *Model) start(e *entry) tea.Cmd {
 
 	e.group = process.NewGroup(e.svc.Name, specs)
 	e.status = StatusStarting
+	e.failure = ""
 	e.logs = nil
 
 	group, svc := e.group, e.svc
@@ -583,9 +605,13 @@ func (m *Model) start(e *entry) tea.Cmd {
 			return healthMsg{service: svc.Name, ok: true}
 		}
 
+		// Generous, because the wait now ends the moment the process dies: the
+		// only thing a long timeout costs is patience with a service that is
+		// genuinely slow to build, and a first `air` compile of a large service
+		// takes minutes.
 		timeout := time.Duration(svc.Health.TimeoutSeconds) * time.Second
-		if timeout == 0 {
-			timeout = 30 * time.Second
+		if timeout < 3*time.Minute {
+			timeout = 3 * time.Minute
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -594,7 +620,7 @@ func (m *Model) start(e *entry) tea.Cmd {
 			Type: svc.Health.Type,
 			Port: svc.Berth,
 			Path: svc.Health.Path,
-		})
+		}, group.Running)
 		return healthMsg{service: svc.Name, ok: err == nil, err: err}
 	}
 }

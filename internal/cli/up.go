@@ -108,7 +108,7 @@ func runUp(names []string, withInfra, noBerth, everything bool) error {
 			return fmt.Errorf("start %s: %w", svc.Name, err)
 		}
 
-		if err := awaitHealthy(svc); err != nil {
+		if err := awaitHealthy(svc, g); err != nil {
 			return fmt.Errorf("%s never became healthy: %w", svc.Name, err)
 		}
 		if svc.Berth > 0 {
@@ -168,13 +168,17 @@ func specs(st *manifest.Store, svc manifest.Service) []process.Spec {
 }
 
 // awaitHealthy waits for the service to answer on its berth.
-func awaitHealthy(svc manifest.Service) error {
+//
+// The timeout is generous because the wait ends the moment the process dies: a
+// long limit only costs patience with a service that is genuinely slow to build,
+// and a first `air` compile of a large service takes minutes.
+func awaitHealthy(svc manifest.Service, g *process.Group) error {
 	if svc.Health == nil || svc.Berth == 0 {
 		return nil
 	}
 	timeout := time.Duration(svc.Health.TimeoutSeconds) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
+	if timeout < 3*time.Minute {
+		timeout = 3 * time.Minute
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -184,7 +188,7 @@ func awaitHealthy(svc manifest.Service) error {
 		Type: svc.Health.Type,
 		Port: svc.Berth,
 		Path: svc.Health.Path,
-	})
+	}, g.Running)
 }
 
 // ensureInfra checks that every datastore a service needs is actually there —

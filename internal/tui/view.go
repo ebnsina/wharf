@@ -334,6 +334,15 @@ func (m *Model) renderFacts(e *entry, inner int) string {
 			Render("this berth is held by a process wharf did not start"))
 	}
 
+	// Why it failed, where the eye already is. Appending it to the log leaves it
+	// one line among thousands, above a screenful of framework banner that
+	// nobody is going to scroll back through.
+	if e.failure != "" {
+		lines = append(lines, "",
+			lipgloss.NewStyle().Foreground(red).Bold(true).Render("✗ ")+
+				lipgloss.NewStyle().Foreground(red).Render(truncate(e.failure, max(inner-2, 1))))
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
