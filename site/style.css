@@ -23,8 +23,8 @@
   --starboard:    #3DD68C;  /* docked, running */
 
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
-  --body: "Inter", system-ui, -apple-system, sans-serif;
+  --display: "Sora", system-ui, sans-serif;
+  --body: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
 
   --measure: 68ch;
   --gutter: clamp(1.25rem, 4vw, 3rem);
