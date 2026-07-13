@@ -16,8 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ebnsina/wharf/internal/berth"
 	"github.com/ebnsina/wharf/internal/manifest"
 	"github.com/ebnsina/wharf/internal/process"
@@ -73,7 +75,10 @@ type Model struct {
 	cursor  int
 
 	viewport viewport.Model
-	events   chan process.Event
+	// spin animates services that are starting. A static glyph makes a service
+	// compiling under air for ten seconds look wedged rather than busy.
+	spin   spinner.Model
+	events chan process.Event
 	ready    bool
 	width    int
 	height   int
@@ -105,10 +110,14 @@ type (
 
 // New builds the dashboard over the given services.
 func New(st *manifest.Store, services []manifest.Service) *Model {
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	sp.Style = lipgloss.NewStyle().Foreground(amber)
+
 	m := &Model{
 		store:     st,
 		events:    make(chan process.Event, 512),
 		following: true,
+		spin:      sp,
 	}
 
 	for _, svc := range services {
@@ -124,7 +133,7 @@ func New(st *manifest.Store, services []manifest.Service) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.waitForEvent(), m.tick(), m.probeAll())
+	return tea.Batch(m.waitForEvent(), m.tick(), m.probeAll(), m.spin.Tick)
 }
 
 // waitForEvent bridges the supervisor's channel into bubbletea's message loop.
@@ -160,8 +169,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//
 		// Rows consumed around the log body: header(1) + footer(1) +
 		// pane border(2) + pane title(1).
-		logWidth := max(msg.Width-listWidth-6, minPaneWidth)
-		logHeight := max(msg.Height-12, minPaneHeight)
+		logWidth := max(msg.Width-listWidth-5, minPaneWidth)
+		logHeight := max(msg.Height-13, minPaneHeight)
 
 		if !m.ready {
 			m.viewport = viewport.New(logWidth, logHeight)
@@ -189,6 +198,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				e.logs = append(e.logs, "wharf: "+msg.err.Error())
 			}
 			m.refreshLog()
+		}
+		return m, nil
+
+	case spinner.TickMsg:
+		// Only keep the animation running while something is actually starting;
+		// an idle dashboard should not repaint four times a second forever.
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		if m.anyStarting() {
+			return m, cmd
 		}
 		return m, nil
 
@@ -257,13 +276,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshLog()
 
 	case "s", "enter":
-		return m, m.start(m.current())
+		// Batch the spinner tick with the start: the animation is only pumped
+		// while something is starting, so it has to be woken here.
+		return m, tea.Batch(m.start(m.current()), m.spin.Tick)
 
 	case "x":
 		return m, m.stop(m.current())
 
 	case "r":
-		return m, tea.Sequence(m.stop(m.current()), m.start(m.current()))
+		return m, tea.Batch(
+			tea.Sequence(m.stop(m.current()), m.start(m.current())),
+			m.spin.Tick,
+		)
 
 	case "g":
 		m.following = true
@@ -280,6 +304,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// anyStarting reports whether a service is mid-startup.
+func (m *Model) anyStarting() bool {
+	for _, e := range m.entries {
+		if e.status == StatusStarting {
+			return true
+		}
+	}
+	return false
 }
 
 // applyEvent folds a supervisor event into the model.
