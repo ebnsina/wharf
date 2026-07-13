@@ -33,6 +33,7 @@ func Execute() error {
 	root.AddCommand(
 		newScanCmd(),
 		newListCmd(),
+		newTUICmd(),
 		newUpCmd(),
 		newDBCmd(),
 		newBerthCmd(),
